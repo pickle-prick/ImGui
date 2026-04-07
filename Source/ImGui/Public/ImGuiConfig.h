@@ -99,8 +99,8 @@ namespace ImGui
 		/// Returns true if the managed ImGui context is valid
 		bool IsValid() const;
 
-		/// Access to the managed ImGui context
-		FImGuiContext* operator->() const;
+	/// Access to the managed ImGui context
+	FImGuiContext* operator->() const;
 
 	private:
 		TSharedPtr<FImGuiContext> Context = nullptr;
@@ -111,6 +111,18 @@ namespace ImGui
 		ImPlotContext* PrevPlotContext = nullptr;
 #endif
 	};
+
+	/// Sets the bloom intensity for the current managed ImGui context.
+	IMGUI_API void SetBloomIntensity(float BloomIntensity);
+
+	/// Returns the bloom intensity for the current managed ImGui context.
+	IMGUI_API float GetBloomIntensity();
+
+	/// Sets the bloom extraction threshold for the current managed ImGui context.
+	IMGUI_API void SetBloomThreshold(float BloomThreshold);
+
+	/// Returns the bloom extraction threshold for the current managed ImGui context.
+	IMGUI_API float GetBloomThreshold();
 
 	/// Converts from UE to ImGui key
 	IMGUI_API ImGuiKey ConvertKey(const FKey& Key);

@@ -1,0 +1,87 @@
+#include "/Engine/Private/Common.ush"
+#include "/Engine/Private/ScreenPass.ush"
+
+SCREEN_PASS_TEXTURE_VIEWPORT(Source)
+Texture2D Source_Texture;
+SamplerState Source_Sampler;
+
+SCREEN_PASS_TEXTURE_VIEWPORT(HighMip)
+Texture2D HighMip_Texture;
+SamplerState HighMip_Sampler;
+
+SCREEN_PASS_TEXTURE_VIEWPORT(LowMip)
+Texture2D LowMip_Texture;
+SamplerState LowMip_Sampler;
+
+SCREEN_PASS_TEXTURE_VIEWPORT(Bloom)
+Texture2D Bloom_Texture;
+SamplerState Bloom_Sampler;
+
+float Threshold;
+float Intensity;
+float2 Direction;
+
+float3 SampleSource(float2 UV)
+{
+	return Source_Texture.SampleLevel(Source_Sampler, clamp(UV, Source_UVViewportBilinearMin, Source_UVViewportBilinearMax), 0).rgb;
+}
+
+float4 SampleSourceRGBA(float2 UV)
+{
+	return Source_Texture.SampleLevel(Source_Sampler, clamp(UV, Source_UVViewportBilinearMin, Source_UVViewportBilinearMax), 0);
+}
+
+float4 SourcePS(float4 UVAndScreenPos : TEXCOORD0, float4 SvPosition : SV_POSITION) : SV_Target0
+{
+	float2 UV = clamp(UVAndScreenPos.xy, Source_UVViewportMin, Source_UVViewportMax);
+	return Source_Texture.SampleLevel(Source_Sampler, UV, 0);
+}
+
+float4 ThresholdPS(float4 UVAndScreenPos : TEXCOORD0, float4 SvPosition : SV_POSITION) : SV_Target0
+{
+	float4 SourceColor = SampleSourceRGBA(UVAndScreenPos.xy);
+	float3 VisibleColor = SourceColor.rgb * SourceColor.a;
+	float Brightness = dot(VisibleColor, float3(0.2126, 0.7152, 0.0722));
+	float Contribution = saturate((Brightness - Threshold) / max(Threshold, 1e-4));
+	return float4(VisibleColor * Contribution * Intensity, SourceColor.a * Contribution);
+}
+
+float4 DownsamplePS(float4 UVAndScreenPos : TEXCOORD0, float4 SvPosition : SV_POSITION) : SV_Target0
+{
+	float2 UV = UVAndScreenPos.xy;
+	float2 HalfTexel = Source_ViewportSizeInverse * 0.5f;
+
+	float4 Color = 0.0f;
+	Color += Source_Texture.SampleLevel(Source_Sampler, UV + float2(-HalfTexel.x, -HalfTexel.y), 0);
+	Color += Source_Texture.SampleLevel(Source_Sampler, UV + float2(HalfTexel.x, -HalfTexel.y), 0);
+	Color += Source_Texture.SampleLevel(Source_Sampler, UV + float2(-HalfTexel.x, HalfTexel.y), 0);
+	Color += Source_Texture.SampleLevel(Source_Sampler, UV + float2(HalfTexel.x, HalfTexel.y), 0);
+	return Color * 0.25f;
+}
+
+float4 BlurPS(float4 UVAndScreenPos : TEXCOORD0, float4 SvPosition : SV_POSITION) : SV_Target0
+{
+	float2 UV = UVAndScreenPos.xy;
+	float2 Step = Direction * Source_ViewportSizeInverse;
+
+	float4 Color = Source_Texture.SampleLevel(Source_Sampler, UV, 0) * 0.22702703;
+	Color += Source_Texture.SampleLevel(Source_Sampler, UV + (Step * 1.38461538), 0) * 0.31621622;
+	Color += Source_Texture.SampleLevel(Source_Sampler, UV - (Step * 1.38461538), 0) * 0.31621622;
+	Color += Source_Texture.SampleLevel(Source_Sampler, UV + (Step * 3.23076923), 0) * 0.07027027;
+	Color += Source_Texture.SampleLevel(Source_Sampler, UV - (Step * 3.23076923), 0) * 0.07027027;
+	return Color;
+}
+
+float4 UpsamplePS(float4 UVAndScreenPos : TEXCOORD0, float4 SvPosition : SV_POSITION) : SV_Target0
+{
+	float2 UV = UVAndScreenPos.xy;
+	float4 High = HighMip_Texture.SampleLevel(HighMip_Sampler, UV, 0);
+	float4 Low = LowMip_Texture.SampleLevel(LowMip_Sampler, UV, 0);
+	return High + Low;
+}
+
+float4 CompositePS(float4 UVAndScreenPos : TEXCOORD0, float4 SvPosition : SV_POSITION) : SV_Target0
+{
+	float2 UV = clamp(UVAndScreenPos.xy, Bloom_UVViewportBilinearMin, Bloom_UVViewportBilinearMax);
+	return Bloom_Texture.SampleLevel(Bloom_Sampler, UV, 0);
+}

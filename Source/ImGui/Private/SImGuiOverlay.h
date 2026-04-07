@@ -3,9 +3,22 @@
 #include <Framework/Application/IInputProcessor.h>
 #include <Widgets/SLeafWidget.h>
 
+#if WITH_ENGINE
+#include <Math/IntPoint.h>
+#include <UObject/StrongObjectPtr.h>
+#endif
+
 THIRD_PARTY_INCLUDES_START
 #include <imgui.h>
 THIRD_PARTY_INCLUDES_END
+
+class FImGuiContext;
+#if WITH_ENGINE
+class FImGuiPresentDrawer;
+class FWidgetRenderer;
+class SImGuiSourceWidget;
+class UTextureRenderTarget2D;
+#endif
 
 struct FImGuiDrawList
 {
@@ -58,7 +71,17 @@ public:
 	void SetDrawData(const ImDrawData* InDrawData);
 
 private:
+	void UpdateSourceCapture();
+
 	TSharedPtr<FImGuiContext> Context = nullptr;
 	TSharedPtr<IInputProcessor> InputProcessor = nullptr;
 	FImGuiDrawData DrawData;
+
+#if WITH_ENGINE
+	TSharedPtr<SImGuiSourceWidget> SourceWidget = nullptr;
+	TUniquePtr<FWidgetRenderer> SourceWidgetRenderer;
+	TStrongObjectPtr<UTextureRenderTarget2D> SourceRenderTarget;
+	FIntPoint SourceRenderTargetSize = FIntPoint::ZeroValue;
+	mutable TSharedPtr<FImGuiPresentDrawer, ESPMode::ThreadSafe> PresentDrawer;
+#endif
 };

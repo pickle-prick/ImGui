@@ -20,7 +20,10 @@ public class ImGui : ModuleRules
 			"ApplicationCore",
 			"InputCore",
 			"Slate",
-			"SlateCore"
+			"SlateCore",
+			"Projects",
+			"RenderCore",
+			"RHI"
 		});
 
 		if (Target.bCompileAgainstEngine)
@@ -28,7 +31,9 @@ public class ImGui : ModuleRules
 			PrivateDependencyModuleNames.AddRange(new[]
 			{
 				"CoreUObject",
-				"Engine"
+				"Engine",
+				"Renderer",
+				"UMG"
 			});
 		}
 

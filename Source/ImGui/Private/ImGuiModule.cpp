@@ -1,5 +1,8 @@
 ﻿#include "ImGuiModule.h"
 
+#include <Interfaces/IPluginManager.h>
+#include <Misc/Paths.h>
+#include <ShaderCore.h>
 #include <Widgets/SWindow.h>
 
 #if WITH_ENGINE
@@ -17,6 +20,13 @@
 
 void FImGuiModule::StartupModule()
 {
+#if !UE_SERVER
+	if (const TSharedPtr<IPlugin> Plugin = IPluginManager::Get().FindPlugin(TEXT("ImGui")))
+	{
+		AddShaderSourceDirectoryMapping(TEXT("/Plugin/ImGui"), FPaths::Combine(Plugin->GetBaseDir(), TEXT("Shaders")));
+	}
+#endif
+
 #if WITH_EDITOR
 	FEditorDelegates::EndPIE.AddRaw(this, &FImGuiModule::OnEndPIE);
 #endif

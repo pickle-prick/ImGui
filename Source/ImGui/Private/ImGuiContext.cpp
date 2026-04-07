@@ -6,6 +6,7 @@
 #include <HAL/PlatformProcess.h>
 #include <HAL/PlatformString.h>
 #include <HAL/UnrealMemory.h>
+#include <Math/UnrealMathUtility.h>
 #include <Misc/App.h>
 #include <Misc/EngineVersionComparison.h>
 #include <Widgets/SWindow.h>
@@ -731,4 +732,24 @@ void FImGuiContext::EndFrame()
 		ImGui_RenderWindow(ImGui::GetMainViewport(), nullptr);
 		ImGui::RenderPlatformWindowsDefault();
 	}
+}
+
+void FImGuiContext::SetBloomIntensity(const float InBloomIntensity)
+{
+	BloomIntensity = FMath::Max(0.0f, InBloomIntensity);
+}
+
+float FImGuiContext::GetBloomIntensity() const
+{
+	return BloomIntensity;
+}
+
+void FImGuiContext::SetBloomThreshold(const float InBloomThreshold)
+{
+	BloomThreshold = FMath::Max(0.0f, InBloomThreshold);
+}
+
+float FImGuiContext::GetBloomThreshold() const
+{
+	return BloomThreshold;
 }

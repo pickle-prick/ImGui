@@ -176,6 +176,42 @@ FImGuiContext* ImGui::FScopedContext::operator->() const
 	return Context.operator->();
 }
 
+void ImGui::SetBloomIntensity(const float BloomIntensity)
+{
+	if (const TSharedPtr<FImGuiContext> Context = FImGuiContext::Get(GetCurrentContext()))
+	{
+		Context->SetBloomIntensity(BloomIntensity);
+	}
+}
+
+float ImGui::GetBloomIntensity()
+{
+	if (const TSharedPtr<FImGuiContext> Context = FImGuiContext::Get(GetCurrentContext()))
+	{
+		return Context->GetBloomIntensity();
+	}
+
+	return 0.0f;
+}
+
+void ImGui::SetBloomThreshold(const float BloomThreshold)
+{
+	if (const TSharedPtr<FImGuiContext> Context = FImGuiContext::Get(GetCurrentContext()))
+	{
+		Context->SetBloomThreshold(BloomThreshold);
+	}
+}
+
+float ImGui::GetBloomThreshold()
+{
+	if (const TSharedPtr<FImGuiContext> Context = FImGuiContext::Get(GetCurrentContext()))
+	{
+		return Context->GetBloomThreshold();
+	}
+
+	return 0.0f;
+}
+
 ImGuiKey ImGui::ConvertKey(const FKey& Key)
 {
 	static const TMap<FKey, ImGuiKey> KeyLookupMap = {

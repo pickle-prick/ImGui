@@ -60,6 +60,10 @@ ecosystem.
 This "scoped context" mechanism will push the appropriate ImGui context and pop it once it's gone out of scope. It's
 advised to check the `ScopedContext` like the example above to ensure that it's safe to draw.
 
+## Bloom notes
+
+If you want to understand or modify the ImGui bloom integration in this fork, see [BLOOM_IMPLEMENTATION.md](./BLOOM_IMPLEMENTATION.md).
+
 ## Remote drawing
 
 A prebuilt binary of the [NetImGui Server](https://github.com/sammyfreg/netImgui) application is included in

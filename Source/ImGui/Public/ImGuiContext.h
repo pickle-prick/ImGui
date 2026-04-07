@@ -42,6 +42,18 @@ public:
 	/// Ends the current frame
 	void EndFrame();
 
+	/// Sets the bloom strength used by the Slate overlay pass.
+	void SetBloomIntensity(float InBloomIntensity);
+
+	/// Returns the bloom strength used by the Slate overlay pass.
+	float GetBloomIntensity() const;
+
+	/// Sets the brightness threshold used when extracting bloom from the offscreen ImGui layer.
+	void SetBloomThreshold(float InBloomThreshold);
+
+	/// Returns the brightness threshold used when extracting bloom from the offscreen ImGui layer.
+	float GetBloomThreshold() const;
+
 #if WITH_NETIMGUI
 	/// Listens for remote connections
 	bool Listen(uint16 Port);
@@ -91,4 +103,6 @@ private:
 #endif
 
 	TArray<FTextureRef> Textures;
+	float BloomIntensity = 0.0f;
+	float BloomThreshold = 0.6f;
 };
