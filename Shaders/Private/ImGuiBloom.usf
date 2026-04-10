@@ -1,6 +1,28 @@
 #include "/Engine/Private/Common.ush"
 #include "/Engine/Private/ScreenPass.ush"
 
+float2 DisplayPos;
+float2 DisplaySize;
+
+Texture2D InputTexture;
+SamplerState InputSampler;
+
+struct FRasterVSInput
+{
+	float2 Position : ATTRIBUTE0;
+	float2 UV : ATTRIBUTE1;
+	float4 Color : ATTRIBUTE2;
+	float HdrScale : ATTRIBUTE3;
+};
+
+struct FRasterVSToPS
+{
+	float4 Position : SV_POSITION;
+	float2 UV : TEXCOORD0;
+	float4 Color : TEXCOORD1;
+	float HdrScale : TEXCOORD2;
+};
+
 SCREEN_PASS_TEXTURE_VIEWPORT(Source)
 Texture2D Source_Texture;
 SamplerState Source_Sampler;
@@ -20,6 +42,26 @@ SamplerState Bloom_Sampler;
 float Threshold;
 float Intensity;
 float2 Direction;
+
+FRasterVSToPS RasterVS(FRasterVSInput Input)
+{
+	FRasterVSToPS Output;
+	float2 SafeDisplaySize = max(DisplaySize, float2(1.0f, 1.0f));
+	float2 LocalPosition = Input.Position - DisplayPos;
+	float2 Ndc = float2((LocalPosition.x / SafeDisplaySize.x) * 2.0f - 1.0f, 1.0f - (LocalPosition.y / SafeDisplaySize.y) * 2.0f);
+	Output.Position = float4(Ndc, 0.0f, 1.0f);
+	Output.UV = Input.UV;
+	Output.Color = Input.Color;
+	Output.HdrScale = Input.HdrScale;
+	return Output;
+}
+
+float4 RasterPS(FRasterVSToPS Input) : SV_Target0
+{
+	float4 Color = InputTexture.Sample(InputSampler, Input.UV) * Input.Color;
+	Color.rgb *= Input.HdrScale;
+	return Color;
+}
 
 float3 SampleSource(float2 UV)
 {

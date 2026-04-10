@@ -83,6 +83,40 @@ Index of this file:
 #pragma GCC diagnostic ignored "-Wcast-qual"                        // warning: cast from type 'const xxxx *' to type 'xxxx *' casts away qualifiers
 #endif
 
+namespace
+{
+    struct ImHdrPackedColor
+    {
+        ImU32 Color;
+        float Scale;
+    };
+
+    static inline ImHdrPackedColor ImPackHdrColor(const ImVec4& col)
+    {
+        const float scale = ImMax(1.0f, ImMax(ImMax(col.x, col.y), col.z));
+        const float inv_scale = 1.0f / scale;
+        return { ImGui::ColorConvertFloat4ToU32(ImVec4(col.x * inv_scale, col.y * inv_scale, col.z * inv_scale, col.w)), scale };
+    }
+
+    struct ImScopedHdrScale
+    {
+        explicit ImScopedHdrScale(ImDrawList* draw_list, float hdr_scale)
+            : DrawList(draw_list)
+            , PreviousScale(draw_list->_HdrScale)
+        {
+            DrawList->_HdrScale = hdr_scale;
+        }
+
+        ~ImScopedHdrScale()
+        {
+            DrawList->_HdrScale = PreviousScale;
+        }
+
+        ImDrawList* DrawList;
+        float PreviousScale;
+    };
+}
+
 //-------------------------------------------------------------------------
 // [SECTION] STB libraries implementation (for stb_truetype and stb_rect_pack)
 //-------------------------------------------------------------------------
@@ -466,6 +500,7 @@ void ImDrawList::_ResetForNewFrame()
     _Splitter.Clear();
     CmdBuffer.push_back(ImDrawCmd());
     _FringeScale = _Data->InitialFringeScale;
+    _HdrScale = 1.0f;
 }
 
 void ImDrawList::_ClearFreeMemory()
@@ -482,6 +517,7 @@ void ImDrawList::_ClearFreeMemory()
     _CallbacksDataBuf.clear();
     _Path.clear();
     _Splitter.ClearFreeMemory();
+    _HdrScale = 1.0f;
 }
 
 ImDrawList* ImDrawList::CloneOutput() const
@@ -751,10 +787,10 @@ void ImDrawList::PrimRect(const ImVec2& a, const ImVec2& c, ImU32 col)
     ImDrawIdx idx = (ImDrawIdx)_VtxCurrentIdx;
     _IdxWritePtr[0] = idx; _IdxWritePtr[1] = (ImDrawIdx)(idx+1); _IdxWritePtr[2] = (ImDrawIdx)(idx+2);
     _IdxWritePtr[3] = idx; _IdxWritePtr[4] = (ImDrawIdx)(idx+2); _IdxWritePtr[5] = (ImDrawIdx)(idx+3);
-    _VtxWritePtr[0].pos = a; _VtxWritePtr[0].uv = uv; _VtxWritePtr[0].col = col;
-    _VtxWritePtr[1].pos = b; _VtxWritePtr[1].uv = uv; _VtxWritePtr[1].col = col;
-    _VtxWritePtr[2].pos = c; _VtxWritePtr[2].uv = uv; _VtxWritePtr[2].col = col;
-    _VtxWritePtr[3].pos = d; _VtxWritePtr[3].uv = uv; _VtxWritePtr[3].col = col;
+    _VtxWritePtr[0].pos = a; _VtxWritePtr[0].uv = uv; _VtxWritePtr[0].col = col; _VtxWritePtr[0].hdr = _HdrScale;
+    _VtxWritePtr[1].pos = b; _VtxWritePtr[1].uv = uv; _VtxWritePtr[1].col = col; _VtxWritePtr[1].hdr = _HdrScale;
+    _VtxWritePtr[2].pos = c; _VtxWritePtr[2].uv = uv; _VtxWritePtr[2].col = col; _VtxWritePtr[2].hdr = _HdrScale;
+    _VtxWritePtr[3].pos = d; _VtxWritePtr[3].uv = uv; _VtxWritePtr[3].col = col; _VtxWritePtr[3].hdr = _HdrScale;
     _VtxWritePtr += 4;
     _VtxCurrentIdx += 4;
     _IdxWritePtr += 6;
@@ -766,10 +802,10 @@ void ImDrawList::PrimRectUV(const ImVec2& a, const ImVec2& c, const ImVec2& uv_a
     ImDrawIdx idx = (ImDrawIdx)_VtxCurrentIdx;
     _IdxWritePtr[0] = idx; _IdxWritePtr[1] = (ImDrawIdx)(idx+1); _IdxWritePtr[2] = (ImDrawIdx)(idx+2);
     _IdxWritePtr[3] = idx; _IdxWritePtr[4] = (ImDrawIdx)(idx+2); _IdxWritePtr[5] = (ImDrawIdx)(idx+3);
-    _VtxWritePtr[0].pos = a; _VtxWritePtr[0].uv = uv_a; _VtxWritePtr[0].col = col;
-    _VtxWritePtr[1].pos = b; _VtxWritePtr[1].uv = uv_b; _VtxWritePtr[1].col = col;
-    _VtxWritePtr[2].pos = c; _VtxWritePtr[2].uv = uv_c; _VtxWritePtr[2].col = col;
-    _VtxWritePtr[3].pos = d; _VtxWritePtr[3].uv = uv_d; _VtxWritePtr[3].col = col;
+    _VtxWritePtr[0].pos = a; _VtxWritePtr[0].uv = uv_a; _VtxWritePtr[0].col = col; _VtxWritePtr[0].hdr = _HdrScale;
+    _VtxWritePtr[1].pos = b; _VtxWritePtr[1].uv = uv_b; _VtxWritePtr[1].col = col; _VtxWritePtr[1].hdr = _HdrScale;
+    _VtxWritePtr[2].pos = c; _VtxWritePtr[2].uv = uv_c; _VtxWritePtr[2].col = col; _VtxWritePtr[2].hdr = _HdrScale;
+    _VtxWritePtr[3].pos = d; _VtxWritePtr[3].uv = uv_d; _VtxWritePtr[3].col = col; _VtxWritePtr[3].hdr = _HdrScale;
     _VtxWritePtr += 4;
     _VtxCurrentIdx += 4;
     _IdxWritePtr += 6;
@@ -780,10 +816,10 @@ void ImDrawList::PrimQuadUV(const ImVec2& a, const ImVec2& b, const ImVec2& c, c
     ImDrawIdx idx = (ImDrawIdx)_VtxCurrentIdx;
     _IdxWritePtr[0] = idx; _IdxWritePtr[1] = (ImDrawIdx)(idx+1); _IdxWritePtr[2] = (ImDrawIdx)(idx+2);
     _IdxWritePtr[3] = idx; _IdxWritePtr[4] = (ImDrawIdx)(idx+2); _IdxWritePtr[5] = (ImDrawIdx)(idx+3);
-    _VtxWritePtr[0].pos = a; _VtxWritePtr[0].uv = uv_a; _VtxWritePtr[0].col = col;
-    _VtxWritePtr[1].pos = b; _VtxWritePtr[1].uv = uv_b; _VtxWritePtr[1].col = col;
-    _VtxWritePtr[2].pos = c; _VtxWritePtr[2].uv = uv_c; _VtxWritePtr[2].col = col;
-    _VtxWritePtr[3].pos = d; _VtxWritePtr[3].uv = uv_d; _VtxWritePtr[3].col = col;
+    _VtxWritePtr[0].pos = a; _VtxWritePtr[0].uv = uv_a; _VtxWritePtr[0].col = col; _VtxWritePtr[0].hdr = _HdrScale;
+    _VtxWritePtr[1].pos = b; _VtxWritePtr[1].uv = uv_b; _VtxWritePtr[1].col = col; _VtxWritePtr[1].hdr = _HdrScale;
+    _VtxWritePtr[2].pos = c; _VtxWritePtr[2].uv = uv_c; _VtxWritePtr[2].col = col; _VtxWritePtr[2].hdr = _HdrScale;
+    _VtxWritePtr[3].pos = d; _VtxWritePtr[3].uv = uv_d; _VtxWritePtr[3].col = col; _VtxWritePtr[3].hdr = _HdrScale;
     _VtxWritePtr += 4;
     _VtxCurrentIdx += 4;
     _IdxWritePtr += 6;
@@ -932,8 +968,8 @@ void ImDrawList::AddPolyline(const ImVec2* points, const int points_count, ImU32
                 ImVec2 tex_uv1(tex_uvs.z, tex_uvs.w);
                 for (int i = 0; i < points_count; i++)
                 {
-                    _VtxWritePtr[0].pos = temp_points[i * 2 + 0]; _VtxWritePtr[0].uv = tex_uv0; _VtxWritePtr[0].col = col; // Left-side outer edge
-                    _VtxWritePtr[1].pos = temp_points[i * 2 + 1]; _VtxWritePtr[1].uv = tex_uv1; _VtxWritePtr[1].col = col; // Right-side outer edge
+                    _VtxWritePtr[0].pos = temp_points[i * 2 + 0]; _VtxWritePtr[0].uv = tex_uv0; _VtxWritePtr[0].col = col; _VtxWritePtr[0].hdr = _HdrScale; // Left-side outer edge
+                    _VtxWritePtr[1].pos = temp_points[i * 2 + 1]; _VtxWritePtr[1].uv = tex_uv1; _VtxWritePtr[1].col = col; _VtxWritePtr[1].hdr = _HdrScale; // Right-side outer edge
                     _VtxWritePtr += 2;
                 }
             }
@@ -942,9 +978,9 @@ void ImDrawList::AddPolyline(const ImVec2* points, const int points_count, ImU32
                 // If we're not using a texture, we need the center vertex as well
                 for (int i = 0; i < points_count; i++)
                 {
-                    _VtxWritePtr[0].pos = points[i];              _VtxWritePtr[0].uv = opaque_uv; _VtxWritePtr[0].col = col;       // Center of line
-                    _VtxWritePtr[1].pos = temp_points[i * 2 + 0]; _VtxWritePtr[1].uv = opaque_uv; _VtxWritePtr[1].col = col_trans; // Left-side outer edge
-                    _VtxWritePtr[2].pos = temp_points[i * 2 + 1]; _VtxWritePtr[2].uv = opaque_uv; _VtxWritePtr[2].col = col_trans; // Right-side outer edge
+                    _VtxWritePtr[0].pos = points[i];              _VtxWritePtr[0].uv = opaque_uv; _VtxWritePtr[0].col = col; _VtxWritePtr[0].hdr = _HdrScale;       // Center of line
+                    _VtxWritePtr[1].pos = temp_points[i * 2 + 0]; _VtxWritePtr[1].uv = opaque_uv; _VtxWritePtr[1].col = col_trans; _VtxWritePtr[1].hdr = _HdrScale; // Left-side outer edge
+                    _VtxWritePtr[2].pos = temp_points[i * 2 + 1]; _VtxWritePtr[2].uv = opaque_uv; _VtxWritePtr[2].col = col_trans; _VtxWritePtr[2].hdr = _HdrScale; // Right-side outer edge
                     _VtxWritePtr += 3;
                 }
             }
@@ -1012,10 +1048,10 @@ void ImDrawList::AddPolyline(const ImVec2* points, const int points_count, ImU32
             // Add vertices
             for (int i = 0; i < points_count; i++)
             {
-                _VtxWritePtr[0].pos = temp_points[i * 4 + 0]; _VtxWritePtr[0].uv = opaque_uv; _VtxWritePtr[0].col = col_trans;
-                _VtxWritePtr[1].pos = temp_points[i * 4 + 1]; _VtxWritePtr[1].uv = opaque_uv; _VtxWritePtr[1].col = col;
-                _VtxWritePtr[2].pos = temp_points[i * 4 + 2]; _VtxWritePtr[2].uv = opaque_uv; _VtxWritePtr[2].col = col;
-                _VtxWritePtr[3].pos = temp_points[i * 4 + 3]; _VtxWritePtr[3].uv = opaque_uv; _VtxWritePtr[3].col = col_trans;
+                _VtxWritePtr[0].pos = temp_points[i * 4 + 0]; _VtxWritePtr[0].uv = opaque_uv; _VtxWritePtr[0].col = col_trans; _VtxWritePtr[0].hdr = _HdrScale;
+                _VtxWritePtr[1].pos = temp_points[i * 4 + 1]; _VtxWritePtr[1].uv = opaque_uv; _VtxWritePtr[1].col = col; _VtxWritePtr[1].hdr = _HdrScale;
+                _VtxWritePtr[2].pos = temp_points[i * 4 + 2]; _VtxWritePtr[2].uv = opaque_uv; _VtxWritePtr[2].col = col; _VtxWritePtr[2].hdr = _HdrScale;
+                _VtxWritePtr[3].pos = temp_points[i * 4 + 3]; _VtxWritePtr[3].uv = opaque_uv; _VtxWritePtr[3].col = col_trans; _VtxWritePtr[3].hdr = _HdrScale;
                 _VtxWritePtr += 4;
             }
         }
@@ -1040,10 +1076,10 @@ void ImDrawList::AddPolyline(const ImVec2* points, const int points_count, ImU32
             dx *= (thickness * 0.5f);
             dy *= (thickness * 0.5f);
 
-            _VtxWritePtr[0].pos.x = p1.x + dy; _VtxWritePtr[0].pos.y = p1.y - dx; _VtxWritePtr[0].uv = opaque_uv; _VtxWritePtr[0].col = col;
-            _VtxWritePtr[1].pos.x = p2.x + dy; _VtxWritePtr[1].pos.y = p2.y - dx; _VtxWritePtr[1].uv = opaque_uv; _VtxWritePtr[1].col = col;
-            _VtxWritePtr[2].pos.x = p2.x - dy; _VtxWritePtr[2].pos.y = p2.y + dx; _VtxWritePtr[2].uv = opaque_uv; _VtxWritePtr[2].col = col;
-            _VtxWritePtr[3].pos.x = p1.x - dy; _VtxWritePtr[3].pos.y = p1.y + dx; _VtxWritePtr[3].uv = opaque_uv; _VtxWritePtr[3].col = col;
+            _VtxWritePtr[0].pos.x = p1.x + dy; _VtxWritePtr[0].pos.y = p1.y - dx; _VtxWritePtr[0].uv = opaque_uv; _VtxWritePtr[0].col = col; _VtxWritePtr[0].hdr = _HdrScale;
+            _VtxWritePtr[1].pos.x = p2.x + dy; _VtxWritePtr[1].pos.y = p2.y - dx; _VtxWritePtr[1].uv = opaque_uv; _VtxWritePtr[1].col = col; _VtxWritePtr[1].hdr = _HdrScale;
+            _VtxWritePtr[2].pos.x = p2.x - dy; _VtxWritePtr[2].pos.y = p2.y + dx; _VtxWritePtr[2].uv = opaque_uv; _VtxWritePtr[2].col = col; _VtxWritePtr[2].hdr = _HdrScale;
+            _VtxWritePtr[3].pos.x = p1.x - dy; _VtxWritePtr[3].pos.y = p1.y + dx; _VtxWritePtr[3].uv = opaque_uv; _VtxWritePtr[3].col = col; _VtxWritePtr[3].hdr = _HdrScale;
             _VtxWritePtr += 4;
 
             _IdxWritePtr[0] = (ImDrawIdx)(_VtxCurrentIdx); _IdxWritePtr[1] = (ImDrawIdx)(_VtxCurrentIdx + 1); _IdxWritePtr[2] = (ImDrawIdx)(_VtxCurrentIdx + 2);
@@ -1107,8 +1143,8 @@ void ImDrawList::AddConvexPolyFilled(const ImVec2* points, const int points_coun
             dm_y *= AA_SIZE * 0.5f;
 
             // Add vertices
-            _VtxWritePtr[0].pos.x = (points[i1].x - dm_x); _VtxWritePtr[0].pos.y = (points[i1].y - dm_y); _VtxWritePtr[0].uv = uv; _VtxWritePtr[0].col = col;        // Inner
-            _VtxWritePtr[1].pos.x = (points[i1].x + dm_x); _VtxWritePtr[1].pos.y = (points[i1].y + dm_y); _VtxWritePtr[1].uv = uv; _VtxWritePtr[1].col = col_trans;  // Outer
+            _VtxWritePtr[0].pos.x = (points[i1].x - dm_x); _VtxWritePtr[0].pos.y = (points[i1].y - dm_y); _VtxWritePtr[0].uv = uv; _VtxWritePtr[0].col = col; _VtxWritePtr[0].hdr = _HdrScale;        // Inner
+            _VtxWritePtr[1].pos.x = (points[i1].x + dm_x); _VtxWritePtr[1].pos.y = (points[i1].y + dm_y); _VtxWritePtr[1].uv = uv; _VtxWritePtr[1].col = col_trans; _VtxWritePtr[1].hdr = _HdrScale;  // Outer
             _VtxWritePtr += 2;
 
             // Add indexes for fringes
@@ -1126,7 +1162,7 @@ void ImDrawList::AddConvexPolyFilled(const ImVec2* points, const int points_coun
         PrimReserve(idx_count, vtx_count);
         for (int i = 0; i < vtx_count; i++)
         {
-            _VtxWritePtr[0].pos = points[i]; _VtxWritePtr[0].uv = uv; _VtxWritePtr[0].col = col;
+            _VtxWritePtr[0].pos = points[i]; _VtxWritePtr[0].uv = uv; _VtxWritePtr[0].col = col; _VtxWritePtr[0].hdr = _HdrScale;
             _VtxWritePtr++;
         }
         for (int i = 2; i < points_count; i++)
@@ -1789,6 +1825,184 @@ void ImDrawList::AddImageRounded(ImTextureRef tex_ref, const ImVec2& p_min, cons
         PopTexture();
 }
 
+void ImDrawList::AddLine(const ImVec2& p1, const ImVec2& p2, const ImVec4& col, float thickness)
+{
+    const ImHdrPackedColor hdr_col = ImPackHdrColor(col);
+    ImScopedHdrScale hdr_scale(this, hdr_col.Scale);
+    AddLine(p1, p2, hdr_col.Color, thickness);
+}
+
+void ImDrawList::AddRect(const ImVec2& p_min, const ImVec2& p_max, const ImVec4& col, float rounding, ImDrawFlags flags, float thickness)
+{
+    const ImHdrPackedColor hdr_col = ImPackHdrColor(col);
+    ImScopedHdrScale hdr_scale(this, hdr_col.Scale);
+    AddRect(p_min, p_max, hdr_col.Color, rounding, flags, thickness);
+}
+
+void ImDrawList::AddRectFilled(const ImVec2& p_min, const ImVec2& p_max, const ImVec4& col, float rounding, ImDrawFlags flags)
+{
+    const ImHdrPackedColor hdr_col = ImPackHdrColor(col);
+    ImScopedHdrScale hdr_scale(this, hdr_col.Scale);
+    AddRectFilled(p_min, p_max, hdr_col.Color, rounding, flags);
+}
+
+void ImDrawList::AddRectFilledMultiColor(const ImVec2& p_min, const ImVec2& p_max, const ImVec4& col_upr_left, const ImVec4& col_upr_right, const ImVec4& col_bot_right, const ImVec4& col_bot_left)
+{
+    const ImHdrPackedColor hdr_ul = ImPackHdrColor(col_upr_left);
+    const ImHdrPackedColor hdr_ur = ImPackHdrColor(col_upr_right);
+    const ImHdrPackedColor hdr_br = ImPackHdrColor(col_bot_right);
+    const ImHdrPackedColor hdr_bl = ImPackHdrColor(col_bot_left);
+    if (((hdr_ul.Color | hdr_ur.Color | hdr_br.Color | hdr_bl.Color) & IM_COL32_A_MASK) == 0)
+        return;
+
+    const ImVec2 uv = _Data->TexUvWhitePixel;
+    PrimReserve(6, 4);
+    PrimWriteIdx((ImDrawIdx)(_VtxCurrentIdx)); PrimWriteIdx((ImDrawIdx)(_VtxCurrentIdx + 1)); PrimWriteIdx((ImDrawIdx)(_VtxCurrentIdx + 2));
+    PrimWriteIdx((ImDrawIdx)(_VtxCurrentIdx)); PrimWriteIdx((ImDrawIdx)(_VtxCurrentIdx + 2)); PrimWriteIdx((ImDrawIdx)(_VtxCurrentIdx + 3));
+    PrimWriteVtx(p_min, uv, hdr_ul.Color, hdr_ul.Scale);
+    PrimWriteVtx(ImVec2(p_max.x, p_min.y), uv, hdr_ur.Color, hdr_ur.Scale);
+    PrimWriteVtx(p_max, uv, hdr_br.Color, hdr_br.Scale);
+    PrimWriteVtx(ImVec2(p_min.x, p_max.y), uv, hdr_bl.Color, hdr_bl.Scale);
+}
+
+void ImDrawList::AddQuad(const ImVec2& p1, const ImVec2& p2, const ImVec2& p3, const ImVec2& p4, const ImVec4& col, float thickness)
+{
+    const ImHdrPackedColor hdr_col = ImPackHdrColor(col);
+    ImScopedHdrScale hdr_scale(this, hdr_col.Scale);
+    AddQuad(p1, p2, p3, p4, hdr_col.Color, thickness);
+}
+
+void ImDrawList::AddQuadFilled(const ImVec2& p1, const ImVec2& p2, const ImVec2& p3, const ImVec2& p4, const ImVec4& col)
+{
+    const ImHdrPackedColor hdr_col = ImPackHdrColor(col);
+    ImScopedHdrScale hdr_scale(this, hdr_col.Scale);
+    AddQuadFilled(p1, p2, p3, p4, hdr_col.Color);
+}
+
+void ImDrawList::AddTriangle(const ImVec2& p1, const ImVec2& p2, const ImVec2& p3, const ImVec4& col, float thickness)
+{
+    const ImHdrPackedColor hdr_col = ImPackHdrColor(col);
+    ImScopedHdrScale hdr_scale(this, hdr_col.Scale);
+    AddTriangle(p1, p2, p3, hdr_col.Color, thickness);
+}
+
+void ImDrawList::AddTriangleFilled(const ImVec2& p1, const ImVec2& p2, const ImVec2& p3, const ImVec4& col)
+{
+    const ImHdrPackedColor hdr_col = ImPackHdrColor(col);
+    ImScopedHdrScale hdr_scale(this, hdr_col.Scale);
+    AddTriangleFilled(p1, p2, p3, hdr_col.Color);
+}
+
+void ImDrawList::AddCircle(const ImVec2& center, float radius, const ImVec4& col, int num_segments, float thickness)
+{
+    const ImHdrPackedColor hdr_col = ImPackHdrColor(col);
+    ImScopedHdrScale hdr_scale(this, hdr_col.Scale);
+    AddCircle(center, radius, hdr_col.Color, num_segments, thickness);
+}
+
+void ImDrawList::AddCircleFilled(const ImVec2& center, float radius, const ImVec4& col, int num_segments)
+{
+    const ImHdrPackedColor hdr_col = ImPackHdrColor(col);
+    ImScopedHdrScale hdr_scale(this, hdr_col.Scale);
+    AddCircleFilled(center, radius, hdr_col.Color, num_segments);
+}
+
+void ImDrawList::AddNgon(const ImVec2& center, float radius, const ImVec4& col, int num_segments, float thickness)
+{
+    const ImHdrPackedColor hdr_col = ImPackHdrColor(col);
+    ImScopedHdrScale hdr_scale(this, hdr_col.Scale);
+    AddNgon(center, radius, hdr_col.Color, num_segments, thickness);
+}
+
+void ImDrawList::AddNgonFilled(const ImVec2& center, float radius, const ImVec4& col, int num_segments)
+{
+    const ImHdrPackedColor hdr_col = ImPackHdrColor(col);
+    ImScopedHdrScale hdr_scale(this, hdr_col.Scale);
+    AddNgonFilled(center, radius, hdr_col.Color, num_segments);
+}
+
+void ImDrawList::AddEllipse(const ImVec2& center, const ImVec2& radius, const ImVec4& col, float rot, int num_segments, float thickness)
+{
+    const ImHdrPackedColor hdr_col = ImPackHdrColor(col);
+    ImScopedHdrScale hdr_scale(this, hdr_col.Scale);
+    AddEllipse(center, radius, hdr_col.Color, rot, num_segments, thickness);
+}
+
+void ImDrawList::AddEllipseFilled(const ImVec2& center, const ImVec2& radius, const ImVec4& col, float rot, int num_segments)
+{
+    const ImHdrPackedColor hdr_col = ImPackHdrColor(col);
+    ImScopedHdrScale hdr_scale(this, hdr_col.Scale);
+    AddEllipseFilled(center, radius, hdr_col.Color, rot, num_segments);
+}
+
+void ImDrawList::AddText(ImFont* font, float font_size, const ImVec2& pos, const ImVec4& col, const char* text_begin, const char* text_end, float wrap_width, const ImVec4* cpu_fine_clip_rect)
+{
+    const ImHdrPackedColor hdr_col = ImPackHdrColor(col);
+    ImScopedHdrScale hdr_scale(this, hdr_col.Scale);
+    AddText(font, font_size, pos, hdr_col.Color, text_begin, text_end, wrap_width, cpu_fine_clip_rect);
+}
+
+void ImDrawList::AddText(const ImVec2& pos, const ImVec4& col, const char* text_begin, const char* text_end)
+{
+    AddText(_Data->Font, _Data->FontSize, pos, col, text_begin, text_end);
+}
+
+void ImDrawList::AddBezierCubic(const ImVec2& p1, const ImVec2& p2, const ImVec2& p3, const ImVec2& p4, const ImVec4& col, float thickness, int num_segments)
+{
+    const ImHdrPackedColor hdr_col = ImPackHdrColor(col);
+    ImScopedHdrScale hdr_scale(this, hdr_col.Scale);
+    AddBezierCubic(p1, p2, p3, p4, hdr_col.Color, thickness, num_segments);
+}
+
+void ImDrawList::AddBezierQuadratic(const ImVec2& p1, const ImVec2& p2, const ImVec2& p3, const ImVec4& col, float thickness, int num_segments)
+{
+    const ImHdrPackedColor hdr_col = ImPackHdrColor(col);
+    ImScopedHdrScale hdr_scale(this, hdr_col.Scale);
+    AddBezierQuadratic(p1, p2, p3, hdr_col.Color, thickness, num_segments);
+}
+
+void ImDrawList::AddPolyline(const ImVec2* points, const int points_count, const ImVec4& col, ImDrawFlags flags, float thickness)
+{
+    const ImHdrPackedColor hdr_col = ImPackHdrColor(col);
+    ImScopedHdrScale hdr_scale(this, hdr_col.Scale);
+    AddPolyline(points, points_count, hdr_col.Color, flags, thickness);
+}
+
+void ImDrawList::AddConvexPolyFilled(const ImVec2* points, const int points_count, const ImVec4& col)
+{
+    const ImHdrPackedColor hdr_col = ImPackHdrColor(col);
+    ImScopedHdrScale hdr_scale(this, hdr_col.Scale);
+    AddConvexPolyFilled(points, points_count, hdr_col.Color);
+}
+
+void ImDrawList::AddConcavePolyFilled(const ImVec2* points, const int points_count, const ImVec4& col)
+{
+    const ImHdrPackedColor hdr_col = ImPackHdrColor(col);
+    ImScopedHdrScale hdr_scale(this, hdr_col.Scale);
+    AddConcavePolyFilled(points, points_count, hdr_col.Color);
+}
+
+void ImDrawList::AddImage(ImTextureRef tex_ref, const ImVec2& p_min, const ImVec2& p_max, const ImVec2& uv_min, const ImVec2& uv_max, const ImVec4& col)
+{
+    const ImHdrPackedColor hdr_col = ImPackHdrColor(col);
+    ImScopedHdrScale hdr_scale(this, hdr_col.Scale);
+    AddImage(tex_ref, p_min, p_max, uv_min, uv_max, hdr_col.Color);
+}
+
+void ImDrawList::AddImageQuad(ImTextureRef tex_ref, const ImVec2& p1, const ImVec2& p2, const ImVec2& p3, const ImVec2& p4, const ImVec2& uv1, const ImVec2& uv2, const ImVec2& uv3, const ImVec2& uv4, const ImVec4& col)
+{
+    const ImHdrPackedColor hdr_col = ImPackHdrColor(col);
+    ImScopedHdrScale hdr_scale(this, hdr_col.Scale);
+    AddImageQuad(tex_ref, p1, p2, p3, p4, uv1, uv2, uv3, uv4, hdr_col.Color);
+}
+
+void ImDrawList::AddImageRounded(ImTextureRef tex_ref, const ImVec2& p_min, const ImVec2& p_max, const ImVec2& uv_min, const ImVec2& uv_max, const ImVec4& col, float rounding, ImDrawFlags flags)
+{
+    const ImHdrPackedColor hdr_col = ImPackHdrColor(col);
+    ImScopedHdrScale hdr_scale(this, hdr_col.Scale);
+    AddImageRounded(tex_ref, p_min, p_max, uv_min, uv_max, hdr_col.Color, rounding, flags);
+}
+
 //-----------------------------------------------------------------------------
 // [SECTION] ImTriangulator, ImDrawList concave polygon fill
 //-----------------------------------------------------------------------------
@@ -2066,8 +2280,8 @@ void ImDrawList::AddConcavePolyFilled(const ImVec2* points, const int points_cou
             dm_y *= AA_SIZE * 0.5f;
 
             // Add vertices
-            _VtxWritePtr[0].pos.x = (points[i1].x - dm_x); _VtxWritePtr[0].pos.y = (points[i1].y - dm_y); _VtxWritePtr[0].uv = uv; _VtxWritePtr[0].col = col;        // Inner
-            _VtxWritePtr[1].pos.x = (points[i1].x + dm_x); _VtxWritePtr[1].pos.y = (points[i1].y + dm_y); _VtxWritePtr[1].uv = uv; _VtxWritePtr[1].col = col_trans;  // Outer
+            _VtxWritePtr[0].pos.x = (points[i1].x - dm_x); _VtxWritePtr[0].pos.y = (points[i1].y - dm_y); _VtxWritePtr[0].uv = uv; _VtxWritePtr[0].col = col; _VtxWritePtr[0].hdr = _HdrScale;        // Inner
+            _VtxWritePtr[1].pos.x = (points[i1].x + dm_x); _VtxWritePtr[1].pos.y = (points[i1].y + dm_y); _VtxWritePtr[1].uv = uv; _VtxWritePtr[1].col = col_trans; _VtxWritePtr[1].hdr = _HdrScale;  // Outer
             _VtxWritePtr += 2;
 
             // Add indexes for fringes
@@ -2085,7 +2299,7 @@ void ImDrawList::AddConcavePolyFilled(const ImVec2* points, const int points_cou
         PrimReserve(idx_count, vtx_count);
         for (int i = 0; i < vtx_count; i++)
         {
-            _VtxWritePtr[0].pos = points[i]; _VtxWritePtr[0].uv = uv; _VtxWritePtr[0].col = col;
+            _VtxWritePtr[0].pos = points[i]; _VtxWritePtr[0].uv = uv; _VtxWritePtr[0].col = col; _VtxWritePtr[0].hdr = _HdrScale;
             _VtxWritePtr++;
         }
         _Data->TempBuffer.reserve_discard((ImTriangulator::EstimateScratchBufferSize(points_count) + sizeof(ImVec2)) / sizeof(ImVec2));
@@ -5528,6 +5742,13 @@ void ImFont::RenderChar(ImDrawList* draw_list, float size, const ImVec2& pos, Im
     draw_list->PrimRectUV(ImVec2(x1, y1), ImVec2(x2, y2), ImVec2(u1, v1), ImVec2(u2, v2), col);
 }
 
+void ImFont::RenderChar(ImDrawList* draw_list, float size, const ImVec2& pos, const ImVec4& col, ImWchar c, const ImVec4* cpu_fine_clip)
+{
+    const ImHdrPackedColor hdr_col = ImPackHdrColor(col);
+    ImScopedHdrScale hdr_scale(draw_list, hdr_col.Scale);
+    RenderChar(draw_list, size, pos, hdr_col.Color, c, cpu_fine_clip);
+}
+
 // Note: as with every ImDrawList drawing function, this expects that the font atlas texture is bound.
 void ImFont::RenderText(ImDrawList* draw_list, float size, const ImVec2& pos, ImU32 col, const ImVec4& clip_rect, const char* text_begin, const char* text_end, float wrap_width, bool cpu_fine_clip)
 {
@@ -5695,10 +5916,10 @@ begin:
 
                 // We are NOT calling PrimRectUV() here because non-inlined causes too much overhead in a debug builds. Inlined here:
                 {
-                    vtx_write[0].pos.x = x1; vtx_write[0].pos.y = y1; vtx_write[0].col = glyph_col; vtx_write[0].uv.x = u1; vtx_write[0].uv.y = v1;
-                    vtx_write[1].pos.x = x2; vtx_write[1].pos.y = y1; vtx_write[1].col = glyph_col; vtx_write[1].uv.x = u2; vtx_write[1].uv.y = v1;
-                    vtx_write[2].pos.x = x2; vtx_write[2].pos.y = y2; vtx_write[2].col = glyph_col; vtx_write[2].uv.x = u2; vtx_write[2].uv.y = v2;
-                    vtx_write[3].pos.x = x1; vtx_write[3].pos.y = y2; vtx_write[3].col = glyph_col; vtx_write[3].uv.x = u1; vtx_write[3].uv.y = v2;
+                    vtx_write[0].pos.x = x1; vtx_write[0].pos.y = y1; vtx_write[0].col = glyph_col; vtx_write[0].hdr = draw_list->_HdrScale; vtx_write[0].uv.x = u1; vtx_write[0].uv.y = v1;
+                    vtx_write[1].pos.x = x2; vtx_write[1].pos.y = y1; vtx_write[1].col = glyph_col; vtx_write[1].hdr = draw_list->_HdrScale; vtx_write[1].uv.x = u2; vtx_write[1].uv.y = v1;
+                    vtx_write[2].pos.x = x2; vtx_write[2].pos.y = y2; vtx_write[2].col = glyph_col; vtx_write[2].hdr = draw_list->_HdrScale; vtx_write[2].uv.x = u2; vtx_write[2].uv.y = v2;
+                    vtx_write[3].pos.x = x1; vtx_write[3].pos.y = y2; vtx_write[3].col = glyph_col; vtx_write[3].hdr = draw_list->_HdrScale; vtx_write[3].uv.x = u1; vtx_write[3].uv.y = v2;
                     idx_write[0] = (ImDrawIdx)(vtx_index); idx_write[1] = (ImDrawIdx)(vtx_index + 1); idx_write[2] = (ImDrawIdx)(vtx_index + 2);
                     idx_write[3] = (ImDrawIdx)(vtx_index); idx_write[4] = (ImDrawIdx)(vtx_index + 2); idx_write[5] = (ImDrawIdx)(vtx_index + 3);
                     vtx_write += 4;
@@ -5731,6 +5952,13 @@ begin:
     draw_list->_VtxWritePtr = vtx_write;
     draw_list->_IdxWritePtr = idx_write;
     draw_list->_VtxCurrentIdx = vtx_index;
+}
+
+void ImFont::RenderText(ImDrawList* draw_list, float size, const ImVec2& pos, const ImVec4& col, const ImVec4& clip_rect, const char* text_begin, const char* text_end, float wrap_width, bool cpu_fine_clip)
+{
+    const ImHdrPackedColor hdr_col = ImPackHdrColor(col);
+    ImScopedHdrScale hdr_scale(draw_list, hdr_col.Scale);
+    RenderText(draw_list, size, pos, hdr_col.Color, clip_rect, text_begin, text_end, wrap_width, cpu_fine_clip);
 }
 
 //-----------------------------------------------------------------------------
@@ -5781,10 +6009,24 @@ void ImGui::RenderArrow(ImDrawList* draw_list, ImVec2 pos, ImU32 col, ImGuiDir d
     draw_list->AddTriangleFilled(center + a, center + b, center + c, col);
 }
 
+void ImGui::RenderArrow(ImDrawList* draw_list, ImVec2 pos, const ImVec4& col, ImGuiDir dir, float scale)
+{
+    const ImHdrPackedColor hdr_col = ImPackHdrColor(col);
+    ImScopedHdrScale hdr_scale(draw_list, hdr_col.Scale);
+    RenderArrow(draw_list, pos, hdr_col.Color, dir, scale);
+}
+
 void ImGui::RenderBullet(ImDrawList* draw_list, ImVec2 pos, ImU32 col)
 {
     // FIXME-OPT: This should be baked in font.
     draw_list->AddCircleFilled(pos, draw_list->_Data->FontSize * 0.20f, col, 8);
+}
+
+void ImGui::RenderBullet(ImDrawList* draw_list, ImVec2 pos, const ImVec4& col)
+{
+    const ImHdrPackedColor hdr_col = ImPackHdrColor(col);
+    ImScopedHdrScale hdr_scale(draw_list, hdr_col.Scale);
+    RenderBullet(draw_list, pos, hdr_col.Color);
 }
 
 void ImGui::RenderCheckMark(ImDrawList* draw_list, ImVec2 pos, ImU32 col, float sz)
@@ -5802,6 +6044,13 @@ void ImGui::RenderCheckMark(ImDrawList* draw_list, ImVec2 pos, ImU32 col, float 
     draw_list->PathStroke(col, 0, thickness);
 }
 
+void ImGui::RenderCheckMark(ImDrawList* draw_list, ImVec2 pos, const ImVec4& col, float sz)
+{
+    const ImHdrPackedColor hdr_col = ImPackHdrColor(col);
+    ImScopedHdrScale hdr_scale(draw_list, hdr_col.Scale);
+    RenderCheckMark(draw_list, pos, hdr_col.Color, sz);
+}
+
 // Render an arrow. 'pos' is position of the arrow tip. half_sz.x is length from base to tip. half_sz.y is length on each side.
 void ImGui::RenderArrowPointingAt(ImDrawList* draw_list, ImVec2 pos, ImVec2 half_sz, ImGuiDir direction, ImU32 col)
 {
@@ -5815,12 +6064,26 @@ void ImGui::RenderArrowPointingAt(ImDrawList* draw_list, ImVec2 pos, ImVec2 half
     }
 }
 
+void ImGui::RenderArrowPointingAt(ImDrawList* draw_list, ImVec2 pos, ImVec2 half_sz, ImGuiDir direction, const ImVec4& col)
+{
+    const ImHdrPackedColor hdr_col = ImPackHdrColor(col);
+    ImScopedHdrScale hdr_scale(draw_list, hdr_col.Scale);
+    RenderArrowPointingAt(draw_list, pos, half_sz, direction, hdr_col.Color);
+}
+
 // This is less wide than RenderArrow() and we use in dock nodes instead of the regular RenderArrow() to denote a change of functionality,
 // and because the saved space means that the left-most tab label can stay at exactly the same position as the label of a loose window.
 void ImGui::RenderArrowDockMenu(ImDrawList* draw_list, ImVec2 p_min, float sz, ImU32 col)
 {
     draw_list->AddRectFilled(p_min + ImVec2(sz * 0.20f, sz * 0.15f), p_min + ImVec2(sz * 0.80f, sz * 0.30f), col);
     RenderArrowPointingAt(draw_list, p_min + ImVec2(sz * 0.50f, sz * 0.85f), ImVec2(sz * 0.30f, sz * 0.40f), ImGuiDir_Down, col);
+}
+
+void ImGui::RenderArrowDockMenu(ImDrawList* draw_list, ImVec2 p_min, float sz, const ImVec4& col)
+{
+    const ImHdrPackedColor hdr_col = ImPackHdrColor(col);
+    ImScopedHdrScale hdr_scale(draw_list, hdr_col.Scale);
+    RenderArrowDockMenu(draw_list, p_min, sz, hdr_col.Color);
 }
 
 static inline float ImAcos01(float x)
@@ -5892,6 +6155,13 @@ void ImGui::RenderRectFilledRangeH(ImDrawList* draw_list, const ImRect& rect, Im
     draw_list->PathFillConvex(col);
 }
 
+void ImGui::RenderRectFilledRangeH(ImDrawList* draw_list, const ImRect& rect, const ImVec4& col, float x_start_norm, float x_end_norm, float rounding)
+{
+    const ImHdrPackedColor hdr_col = ImPackHdrColor(col);
+    ImScopedHdrScale hdr_scale(draw_list, hdr_col.Scale);
+    RenderRectFilledRangeH(draw_list, rect, hdr_col.Color, x_start_norm, x_end_norm, rounding);
+}
+
 void ImGui::RenderRectFilledWithHole(ImDrawList* draw_list, const ImRect& outer, const ImRect& inner, ImU32 col, float rounding)
 {
     const bool fill_L = (inner.Min.x > outer.Min.x);
@@ -5906,6 +6176,13 @@ void ImGui::RenderRectFilledWithHole(ImDrawList* draw_list, const ImRect& outer,
     if (fill_R && fill_U) draw_list->AddRectFilled(ImVec2(inner.Max.x, outer.Min.y), ImVec2(outer.Max.x, inner.Min.y), col, rounding, ImDrawFlags_RoundCornersTopRight);
     if (fill_L && fill_D) draw_list->AddRectFilled(ImVec2(outer.Min.x, inner.Max.y), ImVec2(inner.Min.x, outer.Max.y), col, rounding, ImDrawFlags_RoundCornersBottomLeft);
     if (fill_R && fill_D) draw_list->AddRectFilled(ImVec2(inner.Max.x, inner.Max.y), ImVec2(outer.Max.x, outer.Max.y), col, rounding, ImDrawFlags_RoundCornersBottomRight);
+}
+
+void ImGui::RenderRectFilledWithHole(ImDrawList* draw_list, const ImRect& outer, const ImRect& inner, const ImVec4& col, float rounding)
+{
+    const ImHdrPackedColor hdr_col = ImPackHdrColor(col);
+    ImScopedHdrScale hdr_scale(draw_list, hdr_col.Scale);
+    RenderRectFilledWithHole(draw_list, outer, inner, hdr_col.Color, rounding);
 }
 
 ImDrawFlags ImGui::CalcRoundingFlagsForRectInRect(const ImRect& r_in, const ImRect& r_outer, float threshold)

@@ -2,11 +2,15 @@
 
 #if WITH_ENGINE && !UE_SERVER
 
+#include "SImGuiOverlay.h"
+
 #include <GlobalShader.h>
 #include <HAL/IConsoleManager.h>
 #include <Math/UnrealMathUtility.h>
 #include <RenderGraphBuilder.h>
 #include <RenderGraphUtils.h>
+#include <RenderResource.h>
+#include <RHICommandList.h>
 #include <RHIStaticStates.h>
 #include <ScreenPass.h>
 #include <ShaderParameterStruct.h>
@@ -52,6 +56,70 @@ namespace
 			FIntRect(FIntPoint::ZeroValue, GetMipExtent(Texture->Desc.Extent, MipLevel))
 		);
 	}
+
+	BEGIN_SHADER_PARAMETER_STRUCT(FImGuiRasterPassParameters, )
+		RDG_BUFFER_ACCESS(VertexBuffer, ERHIAccess::VertexOrIndexBuffer)
+		RDG_BUFFER_ACCESS(IndexBuffer, ERHIAccess::VertexOrIndexBuffer)
+		RENDER_TARGET_BINDING_SLOTS()
+	END_SHADER_PARAMETER_STRUCT()
+
+	class FImGuiRasterVS : public FGlobalShader
+	{
+	public:
+		DECLARE_GLOBAL_SHADER(FImGuiRasterVS);
+		SHADER_USE_PARAMETER_STRUCT(FImGuiRasterVS, FGlobalShader);
+
+		BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
+			SHADER_PARAMETER(FVector2f, DisplayPos)
+			SHADER_PARAMETER(FVector2f, DisplaySize)
+		END_SHADER_PARAMETER_STRUCT()
+
+		static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
+		{
+			return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5);
+		}
+	};
+
+	class FImGuiRasterPS : public FGlobalShader
+	{
+	public:
+		DECLARE_GLOBAL_SHADER(FImGuiRasterPS);
+		SHADER_USE_PARAMETER_STRUCT(FImGuiRasterPS, FGlobalShader);
+
+		BEGIN_SHADER_PARAMETER_STRUCT(FParameters, )
+			SHADER_PARAMETER_TEXTURE(Texture2D, InputTexture)
+			SHADER_PARAMETER_SAMPLER(SamplerState, InputSampler)
+		END_SHADER_PARAMETER_STRUCT()
+
+		static bool ShouldCompilePermutation(const FGlobalShaderPermutationParameters& Parameters)
+		{
+			return IsFeatureLevelSupported(Parameters.Platform, ERHIFeatureLevel::SM5);
+		}
+	};
+
+	class FImGuiVertexDeclaration : public FRenderResource
+	{
+	public:
+		FVertexDeclarationRHIRef VertexDeclarationRHI;
+
+		virtual void InitRHI(FRHICommandListBase& RHICmdList) override
+		{
+			FVertexDeclarationElementList Elements;
+			const uint16 Stride = sizeof(ImDrawVert);
+			Elements.Add(FVertexElement(0, STRUCT_OFFSET(ImDrawVert, pos), VET_Float2, 0, Stride));
+			Elements.Add(FVertexElement(0, STRUCT_OFFSET(ImDrawVert, uv), VET_Float2, 1, Stride));
+			Elements.Add(FVertexElement(0, STRUCT_OFFSET(ImDrawVert, col), VET_Color, 2, Stride));
+			Elements.Add(FVertexElement(0, STRUCT_OFFSET(ImDrawVert, hdr), VET_Float1, 3, Stride));
+			VertexDeclarationRHI = RHICreateVertexDeclaration(Elements);
+		}
+
+		virtual void ReleaseRHI() override
+		{
+			VertexDeclarationRHI.SafeRelease();
+		}
+	};
+
+	TGlobalResource<FImGuiVertexDeclaration> GImGuiVertexDeclaration;
 
 	class FImGuiPresentSourcePS : public FGlobalShader
 	{
@@ -159,12 +227,174 @@ namespace
 		}
 	};
 
+	IMPLEMENT_GLOBAL_SHADER(FImGuiRasterVS, "/Plugin/ImGui/Private/ImGuiBloom.usf", "RasterVS", SF_Vertex);
+	IMPLEMENT_GLOBAL_SHADER(FImGuiRasterPS, "/Plugin/ImGui/Private/ImGuiBloom.usf", "RasterPS", SF_Pixel);
 	IMPLEMENT_GLOBAL_SHADER(FImGuiPresentSourcePS, "/Plugin/ImGui/Private/ImGuiBloom.usf", "SourcePS", SF_Pixel);
 	IMPLEMENT_GLOBAL_SHADER(FImGuiBloomThresholdPS, "/Plugin/ImGui/Private/ImGuiBloom.usf", "ThresholdPS", SF_Pixel);
 	IMPLEMENT_GLOBAL_SHADER(FImGuiBloomBlurPS, "/Plugin/ImGui/Private/ImGuiBloom.usf", "BlurPS", SF_Pixel);
 	IMPLEMENT_GLOBAL_SHADER(FImGuiBloomDownsamplePS, "/Plugin/ImGui/Private/ImGuiBloom.usf", "DownsamplePS", SF_Pixel);
 	IMPLEMENT_GLOBAL_SHADER(FImGuiBloomUpsamplePS, "/Plugin/ImGui/Private/ImGuiBloom.usf", "UpsamplePS", SF_Pixel);
 	IMPLEMENT_GLOBAL_SHADER(FImGuiBloomCompositePS, "/Plugin/ImGui/Private/ImGuiBloom.usf", "CompositePS", SF_Pixel);
+
+	struct FImGuiRasterBuffers
+	{
+		FRDGBufferRef VertexBuffer = nullptr;
+		FRDGBufferRef IndexBuffer = nullptr;
+		uint32 VertexCount = 0;
+	};
+
+	FImGuiRasterBuffers CreateRasterBuffers(FRDGBuilder& GraphBuilder, const FImGuiDrawList& DrawList)
+	{
+		FImGuiRasterBuffers Buffers;
+		Buffers.VertexCount = DrawList.VtxBuffer.Size;
+		if (Buffers.VertexCount == 0 || DrawList.IdxBuffer.Size <= 0)
+		{
+			return Buffers;
+		}
+
+		FRDGBufferDesc VertexBufferDesc;
+		VertexBufferDesc.Usage = EBufferUsageFlags::Static | EBufferUsageFlags::VertexBuffer;
+		VertexBufferDesc.BytesPerElement = sizeof(ImDrawVert);
+		VertexBufferDesc.NumElements = DrawList.VtxBuffer.Size;
+		Buffers.VertexBuffer = CreateVertexBuffer(
+			GraphBuilder,
+			TEXT("ImGuiVertexBuffer"),
+			VertexBufferDesc,
+			DrawList.VtxBuffer.Data,
+			DrawList.VtxBuffer.Size * sizeof(ImDrawVert));
+
+		FRDGBufferDesc IndexBufferDesc;
+		IndexBufferDesc.Usage = EBufferUsageFlags::Static | EBufferUsageFlags::IndexBuffer;
+		IndexBufferDesc.BytesPerElement = sizeof(ImDrawIdx);
+		IndexBufferDesc.NumElements = DrawList.IdxBuffer.Size;
+		Buffers.IndexBuffer = GraphBuilder.CreateBuffer(IndexBufferDesc, TEXT("ImGuiIndexBuffer"));
+		GraphBuilder.QueueBufferUpload(Buffers.IndexBuffer, DrawList.IdxBuffer.Data, DrawList.IdxBuffer.Size * sizeof(ImDrawIdx));
+		return Buffers;
+	}
+
+	FIntRect GetScissorRect(const FVector4f& ClipRect, const FVector2f& DisplayPos, const FIntPoint& SourceExtent)
+	{
+		FIntRect Rect(
+			FIntPoint(
+				FMath::Clamp(FMath::FloorToInt(ClipRect.X - DisplayPos.X), 0, SourceExtent.X),
+				FMath::Clamp(FMath::FloorToInt(ClipRect.Y - DisplayPos.Y), 0, SourceExtent.Y)),
+			FIntPoint(
+				FMath::Clamp(FMath::CeilToInt(ClipRect.Z - DisplayPos.X), 0, SourceExtent.X),
+				FMath::Clamp(FMath::CeilToInt(ClipRect.W - DisplayPos.Y), 0, SourceExtent.Y)));
+		return Rect;
+	}
+
+	FRDGTextureRef AddRasterSourcePass(
+		FRDGBuilder& GraphBuilder,
+		const FScreenPassViewInfo& ViewInfo,
+		TSharedPtr<const FImGuiDrawData, ESPMode::ThreadSafe> DrawData)
+	{
+		const FIntPoint SourceExtent(
+			FMath::Max(FMath::CeilToInt(DrawData->DisplaySize.X), 1),
+			FMath::Max(FMath::CeilToInt(DrawData->DisplaySize.Y), 1));
+
+		FRDGTextureRef SourceTexture = GraphBuilder.CreateTexture(
+			FRDGTextureDesc::Create2D(SourceExtent, PF_FloatRGBA, FClearValueBinding::Transparent, TexCreate_RenderTargetable | TexCreate_ShaderResource),
+			TEXT("ImGuiSource")
+		);
+
+		AddClearRenderTargetPass(GraphBuilder, SourceTexture, FLinearColor::Transparent);
+
+		for (int32 DrawListIndex = 0; DrawListIndex < DrawData->DrawLists.Num(); ++DrawListIndex)
+		{
+			const FImGuiDrawList& DrawList = DrawData->DrawLists[DrawListIndex];
+			const FImGuiRasterBuffers RasterBuffers = CreateRasterBuffers(GraphBuilder, DrawList);
+			if (!RasterBuffers.VertexBuffer || !RasterBuffers.IndexBuffer)
+			{
+				continue;
+			}
+
+			FImGuiRasterPassParameters* PassParameters = GraphBuilder.AllocParameters<FImGuiRasterPassParameters>();
+			PassParameters->VertexBuffer = RasterBuffers.VertexBuffer;
+			PassParameters->IndexBuffer = RasterBuffers.IndexBuffer;
+			PassParameters->RenderTargets[0] = FRenderTargetBinding(SourceTexture, ERenderTargetLoadAction::ELoad);
+
+			GraphBuilder.AddPass(
+				RDG_EVENT_NAME("ImGuiRaster"),
+				PassParameters,
+				ERDGPassFlags::Raster,
+				[DrawData, PassParameters, DrawListIndex, SourceExtent, FeatureLevel = ViewInfo.FeatureLevel, VertexCount = RasterBuffers.VertexCount](FRHICommandList& RHICmdList)
+				{
+					TShaderMapRef<FImGuiRasterVS> VertexShader(GetGlobalShaderMap(FeatureLevel));
+					TShaderMapRef<FImGuiRasterPS> PixelShader(GetGlobalShaderMap(FeatureLevel));
+					FRHISamplerState* SamplerState = TStaticSamplerState<SF_Bilinear, AM_Clamp, AM_Clamp, AM_Clamp>::GetRHI();
+					const FImGuiDrawList& DrawListRef = DrawData->DrawLists[DrawListIndex];
+
+					const auto ApplyRasterState = [&]()
+					{
+						FGraphicsPipelineStateInitializer GraphicsPSOInit;
+						RHICmdList.ApplyCachedRenderTargets(GraphicsPSOInit);
+						GraphicsPSOInit.BlendState = TStaticBlendState<
+							CW_RGBA,
+							BO_Add, BF_SourceAlpha, BF_InverseSourceAlpha,
+							BO_Add, BF_One, BF_InverseSourceAlpha>::GetRHI();
+						GraphicsPSOInit.RasterizerState = TStaticRasterizerState<FM_Solid, CM_None>::GetRHI();
+						GraphicsPSOInit.DepthStencilState = TStaticDepthStencilState<false, CF_Always>::GetRHI();
+						GraphicsPSOInit.BoundShaderState.VertexDeclarationRHI = GImGuiVertexDeclaration.VertexDeclarationRHI;
+						GraphicsPSOInit.BoundShaderState.VertexShaderRHI = VertexShader.GetVertexShader();
+						GraphicsPSOInit.BoundShaderState.PixelShaderRHI = PixelShader.GetPixelShader();
+						GraphicsPSOInit.PrimitiveType = PT_TriangleList;
+						SetGraphicsPipelineState(RHICmdList, GraphicsPSOInit, 0);
+
+						FImGuiRasterVS::FParameters VSParameters;
+						VSParameters.DisplayPos = DrawData->DisplayPos;
+						VSParameters.DisplaySize = DrawData->DisplaySize;
+						SetShaderParameters(RHICmdList, VertexShader, VertexShader.GetVertexShader(), VSParameters);
+					};
+
+					RHICmdList.SetViewport(0.0f, 0.0f, 0.0f, (float)SourceExtent.X, (float)SourceExtent.Y, 1.0f);
+					ApplyRasterState();
+					RHICmdList.SetStreamSource(0, PassParameters->VertexBuffer->GetRHI(), 0);
+
+					for (const FImGuiDrawCmd& DrawCmd : DrawListRef.CmdBuffer)
+					{
+						if (DrawCmd.bResetRenderState)
+						{
+							ApplyRasterState();
+							continue;
+						}
+
+						if (!DrawCmd.Texture.IsValid()
+							|| DrawCmd.ElemCount == 0
+							|| DrawCmd.VtxOffset >= (uint32)DrawListRef.VtxBuffer.Size
+							|| DrawCmd.IdxOffset + DrawCmd.ElemCount > (uint32)DrawListRef.IdxBuffer.Size)
+						{
+							continue;
+						}
+
+						const FIntRect ScissorRect = GetScissorRect(DrawCmd.ClipRect, DrawData->DisplayPos, SourceExtent);
+						if (ScissorRect.Area() <= 0)
+						{
+							continue;
+						}
+
+						FImGuiRasterPS::FParameters PSParameters;
+						PSParameters.InputTexture = DrawCmd.Texture;
+						PSParameters.InputSampler = SamplerState;
+						SetShaderParameters(RHICmdList, PixelShader, PixelShader.GetPixelShader(), PSParameters);
+
+						RHICmdList.SetScissorRect(true, ScissorRect.Min.X, ScissorRect.Min.Y, ScissorRect.Max.X, ScissorRect.Max.Y);
+						RHICmdList.DrawIndexedPrimitive(
+							PassParameters->IndexBuffer->GetRHI(),
+							DrawCmd.VtxOffset,
+							0,
+							VertexCount - DrawCmd.VtxOffset,
+							DrawCmd.IdxOffset,
+							DrawCmd.ElemCount / 3,
+							1);
+					}
+
+					RHICmdList.SetScissorRect(false, 0, 0, 0, 0);
+				});
+		}
+
+		return SourceTexture;
+	}
 
 	void AddSourcePresentPass(
 		FRDGBuilder& GraphBuilder,
@@ -379,8 +609,8 @@ namespace
 #endif
 }
 
-FImGuiPresentDrawer::FImGuiPresentDrawer(const FTextureReferenceRHIRef& InSourceTexture, const FIntRect& InOutputRect, const FImGuiBloomSettings& InSettings)
-	: SourceTextureReference(InSourceTexture)
+FImGuiPresentDrawer::FImGuiPresentDrawer(TSharedPtr<const FImGuiDrawData, ESPMode::ThreadSafe> InDrawData, const FIntRect& InOutputRect, const FImGuiBloomSettings& InSettings)
+	: DrawData(MoveTemp(InDrawData))
 	, OutputRect(InOutputRect)
 	, Settings(InSettings)
 {
@@ -388,13 +618,7 @@ FImGuiPresentDrawer::FImGuiPresentDrawer(const FTextureReferenceRHIRef& InSource
 
 void FImGuiPresentDrawer::Draw_RenderThread(FRDGBuilder& GraphBuilder, const FDrawPassInputs& Inputs)
 {
-	if (!SourceTextureReference.IsValid())
-	{
-		return;
-	}
-
-	FRDGTextureRef SourceTexture = RegisterExternalTexture(GraphBuilder, SourceTextureReference, TEXT("ImGuiBloomSource"));
-	if (!SourceTexture)
+	if (!DrawData.IsValid() || !DrawData->bValid)
 	{
 		return;
 	}
@@ -408,6 +632,12 @@ void FImGuiPresentDrawer::Draw_RenderThread(FRDGBuilder& GraphBuilder, const FDr
 	}
 
 	const FScreenPassViewInfo ViewInfo(GMaxRHIFeatureLevel);
+	FRDGTextureRef SourceTexture = AddRasterSourcePass(GraphBuilder, ViewInfo, DrawData);
+	if (!SourceTexture)
+	{
+		return;
+	}
+
 	const FIntPoint SourceExtent = SourceTexture->Desc.Extent;
 	const FIntPoint SourceMin = ClampedOutputRect.Min - OutputRect.Min;
 	FIntRect SourceRect(SourceMin, SourceMin + ClampedOutputRect.Size());

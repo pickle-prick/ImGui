@@ -5,6 +5,7 @@
 #include <Math/IntRect.h>
 #include <Rendering/RenderingCommon.h>
 #include <RHIResources.h>
+#include <Templates/SharedPointer.h>
 
 struct FImGuiBloomSettings
 {
@@ -12,15 +13,17 @@ struct FImGuiBloomSettings
 	float Threshold = 0.6f;
 };
 
+struct FImGuiDrawData;
+
 class FImGuiPresentDrawer : public ICustomSlateElement
 {
 public:
-	FImGuiPresentDrawer(const FTextureReferenceRHIRef& InSourceTexture, const FIntRect& InOutputRect, const FImGuiBloomSettings& InSettings);
+	FImGuiPresentDrawer(TSharedPtr<const FImGuiDrawData, ESPMode::ThreadSafe> InDrawData, const FIntRect& InOutputRect, const FImGuiBloomSettings& InSettings);
 
 	virtual void Draw_RenderThread(FRDGBuilder& GraphBuilder, const FDrawPassInputs& Inputs) override;
 
 private:
-	FTextureReferenceRHIRef SourceTextureReference;
+	TSharedPtr<const FImGuiDrawData, ESPMode::ThreadSafe> DrawData;
 	FIntRect OutputRect;
 	FImGuiBloomSettings Settings;
 };

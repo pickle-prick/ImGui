@@ -5,6 +5,7 @@
 
 #if WITH_ENGINE
 #include <Math/IntPoint.h>
+#include <RHIResources.h>
 #include <UObject/StrongObjectPtr.h>
 #endif
 
@@ -15,9 +16,18 @@ THIRD_PARTY_INCLUDES_END
 class FImGuiContext;
 #if WITH_ENGINE
 class FImGuiPresentDrawer;
-class FWidgetRenderer;
-class SImGuiSourceWidget;
-class UTextureRenderTarget2D;
+#endif
+
+#if WITH_ENGINE
+struct FImGuiDrawCmd
+{
+	FVector4f ClipRect = FVector4f(0.0f, 0.0f, 0.0f, 0.0f);
+	uint32 ElemCount = 0;
+	uint32 IdxOffset = 0;
+	uint32 VtxOffset = 0;
+	FTextureRHIRef Texture;
+	bool bResetRenderState = false;
+};
 #endif
 
 struct FImGuiDrawList
@@ -27,7 +37,11 @@ struct FImGuiDrawList
 
 	ImVector<ImDrawVert> VtxBuffer;
 	ImVector<ImDrawIdx> IdxBuffer;
+#if WITH_ENGINE
+	TArray<FImGuiDrawCmd> CmdBuffer;
+#else
 	ImVector<ImDrawCmd> CmdBuffer;
+#endif
 	ImDrawListFlags Flags = ImDrawListFlags_None;
 };
 
@@ -71,17 +85,11 @@ public:
 	void SetDrawData(const ImDrawData* InDrawData);
 
 private:
-	void UpdateSourceCapture();
-
 	TSharedPtr<FImGuiContext> Context = nullptr;
 	TSharedPtr<IInputProcessor> InputProcessor = nullptr;
-	FImGuiDrawData DrawData;
+	TSharedPtr<const FImGuiDrawData, ESPMode::ThreadSafe> DrawData;
 
 #if WITH_ENGINE
-	TSharedPtr<SImGuiSourceWidget> SourceWidget = nullptr;
-	TUniquePtr<FWidgetRenderer> SourceWidgetRenderer;
-	TStrongObjectPtr<UTextureRenderTarget2D> SourceRenderTarget;
-	FIntPoint SourceRenderTargetSize = FIntPoint::ZeroValue;
 	mutable TSharedPtr<FImGuiPresentDrawer, ESPMode::ThreadSafe> PresentDrawer;
 #endif
 };

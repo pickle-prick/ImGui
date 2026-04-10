@@ -20,6 +20,7 @@ struct ImPlotContext;
 
 #define IM_ASSERT(Expr) ensure(Expr)
 
+#define IMGUI_DEFINE_MATH_OPERATORS
 #define IMGUI_DISABLE_OBSOLETE_FUNCTIONS
 #define IMGUI_DISABLE_WIN32_FUNCTIONS
 #define IMGUI_DISABLE_DEFAULT_ALLOCATORS
@@ -58,6 +59,15 @@ uint64 ImFileWrite(const void* Data, uint64 Size, uint64 Count, ImFileHandle Fil
 #define IM_COL32_B_SHIFT ImGui::ImCol32BShift
 #define IM_COL32_A_SHIFT ImGui::ImCol32AShift
 #define IM_COL32_A_MASK ImGui::ImCol32AMask
+
+#define IMGUI_OVERRIDE_DRAWVERT_STRUCT_LAYOUT \
+struct ImDrawVert \
+{ \
+	ImVec2 pos; \
+	ImVec2 uv; \
+	ImU32 col; \
+	float hdr; \
+}
 
 #if WITH_ENGINE
 #define ImTextureID UTexture*

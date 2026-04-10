@@ -3526,24 +3526,31 @@ ImGuiStyle& ImGui::GetStyle()
 
 ImU32 ImGui::GetColorU32(ImGuiCol idx, float alpha_mul)
 {
-    ImGuiStyle& style = GImGui->Style;
-    ImVec4 c = style.Colors[idx];
-    c.w *= style.Alpha * alpha_mul;
-    return ColorConvertFloat4ToU32(c);
+    return ColorConvertFloat4ToU32(GetStyleColorVec4(idx, alpha_mul));
 }
 
 ImU32 ImGui::GetColorU32(const ImVec4& col)
 {
-    ImGuiStyle& style = GImGui->Style;
-    ImVec4 c = col;
-    c.w *= style.Alpha;
-    return ColorConvertFloat4ToU32(c);
+    return ColorConvertFloat4ToU32(ApplyStyleAlpha(col));
 }
 
 const ImVec4& ImGui::GetStyleColorVec4(ImGuiCol idx)
 {
     ImGuiStyle& style = GImGui->Style;
     return style.Colors[idx];
+}
+
+ImVec4 ImGui::ApplyStyleAlpha(const ImVec4& col, float alpha_mul)
+{
+    ImGuiStyle& style = GImGui->Style;
+    ImVec4 c = col;
+    c.w *= style.Alpha * alpha_mul;
+    return c;
+}
+
+ImVec4 ImGui::GetStyleColorVec4(ImGuiCol idx, float alpha_mul)
+{
+    return ApplyStyleAlpha(GetStyleColorVec4(idx), alpha_mul);
 }
 
 ImU32 ImGui::GetColorU32(ImU32 col, float alpha_mul)
@@ -3837,7 +3844,7 @@ void ImGui::RenderText(ImVec2 pos, const char* text, const char* text_end, bool 
 
     if (text != text_display_end)
     {
-        window->DrawList->AddText(g.Font, g.FontSize, pos, GetColorU32(ImGuiCol_Text), text, text_display_end);
+        window->DrawList->AddText(g.Font, g.FontSize, pos, GetStyleColorVec4(ImGuiCol_Text, 1.0f), text, text_display_end);
         if (g.LogEnabled)
             LogRenderedText(&pos, text, text_display_end);
     }
@@ -3853,7 +3860,7 @@ void ImGui::RenderTextWrapped(ImVec2 pos, const char* text, const char* text_end
 
     if (text != text_end)
     {
-        window->DrawList->AddText(g.Font, g.FontSize, pos, GetColorU32(ImGuiCol_Text), text, text_end, wrap_width);
+        window->DrawList->AddText(g.Font, g.FontSize, pos, GetStyleColorVec4(ImGuiCol_Text, 1.0f), text, text_end, wrap_width);
         if (g.LogEnabled)
             LogRenderedText(&pos, text, text_end);
     }
@@ -3884,11 +3891,11 @@ void ImGui::RenderTextClippedEx(ImDrawList* draw_list, const ImVec2& pos_min, co
     if (need_clipping)
     {
         ImVec4 fine_clip_rect(clip_min->x, clip_min->y, clip_max->x, clip_max->y);
-        draw_list->AddText(NULL, 0.0f, pos, GetColorU32(ImGuiCol_Text), text, text_display_end, 0.0f, &fine_clip_rect);
+        draw_list->AddText(NULL, 0.0f, pos, GetStyleColorVec4(ImGuiCol_Text, 1.0f), text, text_display_end, 0.0f, &fine_clip_rect);
     }
     else
     {
-        draw_list->AddText(NULL, 0.0f, pos, GetColorU32(ImGuiCol_Text), text, text_display_end, 0.0f, NULL);
+        draw_list->AddText(NULL, 0.0f, pos, GetStyleColorVec4(ImGuiCol_Text, 1.0f), text, text_display_end, 0.0f, NULL);
     }
 }
 
@@ -3950,7 +3957,7 @@ void ImGui::RenderTextEllipsis(ImDrawList* draw_list, const ImVec2& pos_min, con
         RenderTextClippedEx(draw_list, pos_min, pos_max, text, text_end_ellipsis, &text_size, ImVec2(0.0f, 0.0f));
         ImVec4 cpu_fine_clip_rect(pos_min.x, pos_min.y, pos_max.x, pos_max.y);
         ImVec2 ellipsis_pos = ImTrunc(ImVec2(pos_min.x + text_size_clipped_x, pos_min.y));
-        font->RenderChar(draw_list, font_size, ellipsis_pos, GetColorU32(ImGuiCol_Text), font->EllipsisChar, &cpu_fine_clip_rect);
+        font->RenderChar(draw_list, font_size, ellipsis_pos, GetStyleColorVec4(ImGuiCol_Text, 1.0f), font->EllipsisChar, &cpu_fine_clip_rect);
     }
     else
     {
@@ -3975,6 +3982,19 @@ void ImGui::RenderFrame(ImVec2 p_min, ImVec2 p_max, ImU32 fill_col, bool borders
     }
 }
 
+void ImGui::RenderFrame(ImVec2 p_min, ImVec2 p_max, const ImVec4& fill_col, bool borders, float rounding)
+{
+    ImGuiContext& g = *GImGui;
+    ImGuiWindow* window = g.CurrentWindow;
+    window->DrawList->AddRectFilled(p_min, p_max, fill_col, rounding);
+    const float border_size = g.Style.FrameBorderSize;
+    if (borders && border_size > 0.0f)
+    {
+        window->DrawList->AddRect(p_min + ImVec2(1, 1), p_max + ImVec2(1, 1), GetStyleColorVec4(ImGuiCol_BorderShadow, 1.0f), rounding, 0, border_size);
+        window->DrawList->AddRect(p_min, p_max, GetStyleColorVec4(ImGuiCol_Border, 1.0f), rounding, 0, border_size);
+    }
+}
+
 void ImGui::RenderFrameBorder(ImVec2 p_min, ImVec2 p_max, float rounding)
 {
     ImGuiContext& g = *GImGui;
@@ -3982,8 +4002,8 @@ void ImGui::RenderFrameBorder(ImVec2 p_min, ImVec2 p_max, float rounding)
     const float border_size = g.Style.FrameBorderSize;
     if (border_size > 0.0f)
     {
-        window->DrawList->AddRect(p_min + ImVec2(1, 1), p_max + ImVec2(1, 1), GetColorU32(ImGuiCol_BorderShadow), rounding, 0, border_size);
-        window->DrawList->AddRect(p_min, p_max, GetColorU32(ImGuiCol_Border), rounding, 0, border_size);
+        window->DrawList->AddRect(p_min + ImVec2(1, 1), p_max + ImVec2(1, 1), GetStyleColorVec4(ImGuiCol_BorderShadow, 1.0f), rounding, 0, border_size);
+        window->DrawList->AddRect(p_min, p_max, GetStyleColorVec4(ImGuiCol_Border, 1.0f), rounding, 0, border_size);
     }
 }
 
@@ -4006,7 +4026,7 @@ void ImGui::RenderNavCursor(const ImRect& bb, ImGuiID id, ImGuiNavRenderCursorFl
     const float thickness = 2.0f;
     if (flags & ImGuiNavRenderCursorFlags_Compact)
     {
-        window->DrawList->AddRect(display_rect.Min, display_rect.Max, GetColorU32(ImGuiCol_NavCursor), rounding, 0, thickness);
+        window->DrawList->AddRect(display_rect.Min, display_rect.Max, GetStyleColorVec4(ImGuiCol_NavCursor, 1.0f), rounding, 0, thickness);
     }
     else
     {
@@ -4015,7 +4035,7 @@ void ImGui::RenderNavCursor(const ImRect& bb, ImGuiID id, ImGuiNavRenderCursorFl
         bool fully_visible = window->ClipRect.Contains(display_rect);
         if (!fully_visible)
             window->DrawList->PushClipRect(display_rect.Min, display_rect.Max);
-        window->DrawList->AddRect(display_rect.Min, display_rect.Max, GetColorU32(ImGuiCol_NavCursor), rounding, 0, thickness);
+        window->DrawList->AddRect(display_rect.Min, display_rect.Max, GetStyleColorVec4(ImGuiCol_NavCursor, 1.0f), rounding, 0, thickness);
         if (!fully_visible)
             window->DrawList->PopClipRect();
     }
@@ -7421,7 +7441,7 @@ void ImGui::RenderWindowDecorations(ImGuiWindow* window, const ImRect& title_bar
         {
             ImRect menu_bar_rect = window->MenuBarRect();
             menu_bar_rect.ClipWith(window->Rect());  // Soft clipping, in particular child window don't have minimum size covering the menu bar so this is useful for them.
-            window->DrawList->AddRectFilled(menu_bar_rect.Min, menu_bar_rect.Max, GetColorU32(ImGuiCol_MenuBarBg), (flags & ImGuiWindowFlags_NoTitleBar) ? window_rounding : 0.0f, ImDrawFlags_RoundCornersTop);
+            window->DrawList->AddRectFilled(menu_bar_rect.Min, menu_bar_rect.Max, GetStyleColorVec4(ImGuiCol_MenuBarBg, 1.0f), (flags & ImGuiWindowFlags_NoTitleBar) ? window_rounding : 0.0f, ImDrawFlags_RoundCornersTop);
             if (style.FrameBorderSize > 0.0f && menu_bar_rect.Max.y < window->Pos.y + window->Size.y)
                 window->DrawList->AddLine(menu_bar_rect.GetBL() + ImVec2(window_border_size * 0.5f, 0.0f), menu_bar_rect.GetBR() - ImVec2(window_border_size * 0.5f, 0.0f), GetColorU32(ImGuiCol_Border), style.FrameBorderSize);
         }
@@ -7563,7 +7583,7 @@ void ImGui::RenderWindowTitleBarContents(ImGuiWindow* window, const ImRect& titl
         marker_pos.y = (layout_r.Min.y + layout_r.Max.y) * 0.5f;
         if (marker_pos.x > layout_r.Min.x)
         {
-            RenderBullet(window->DrawList, marker_pos, GetColorU32(ImGuiCol_Text));
+            RenderBullet(window->DrawList, marker_pos, GetStyleColorVec4(ImGuiCol_Text, 1.0f));
             clip_r.Max.x = ImMin(clip_r.Max.x, marker_pos.x - (int)(marker_size_x * 0.5f));
         }
     }
@@ -18744,9 +18764,9 @@ static void ImGui::DockNodeUpdate(ImGuiDockNode* node)
     {
         host_window->DrawList->ChannelsSetCurrent(DOCKING_HOST_DRAW_CHANNEL_BG);
         if (central_node_hole)
-            RenderRectFilledWithHole(host_window->DrawList, node->Rect(), central_node->Rect(), GetColorU32(ImGuiCol_WindowBg), 0.0f);
+            RenderRectFilledWithHole(host_window->DrawList, node->Rect(), central_node->Rect(), GetStyleColorVec4(ImGuiCol_WindowBg, 1.0f), 0.0f);
         else
-            host_window->DrawList->AddRectFilled(node->Pos, node->Pos + node->Size, GetColorU32(ImGuiCol_WindowBg), 0.0f);
+            host_window->DrawList->AddRectFilled(node->Pos, node->Pos + node->Size, GetStyleColorVec4(ImGuiCol_WindowBg, 1.0f), 0.0f);
     }
 
     // Draw and populate Tab Bar
@@ -19811,7 +19831,7 @@ void ImGui::DockNodeTreeUpdateSplitter(ImGuiDockNode* node)
         if ((merged_flags & ImGuiDockNodeFlags_NoResize) || (merged_flags & no_resize_axis_flag))
         {
             ImGuiWindow* window = g.CurrentWindow;
-            window->DrawList->AddRectFilled(bb.Min, bb.Max, GetColorU32(ImGuiCol_Separator), g.Style.FrameRounding);
+            window->DrawList->AddRectFilled(bb.Min, bb.Max, GetStyleColorVec4(ImGuiCol_Separator, 1.0f), g.Style.FrameRounding);
         }
         else
         {
@@ -21368,7 +21388,7 @@ void ImGui::DebugRenderViewportThumbnail(ImDrawList* draw_list, ImGuiViewportP* 
     ImVec2 scale = bb.GetSize() / viewport->Size;
     ImVec2 off = bb.Min - viewport->Pos * scale;
     float alpha_mul = (viewport->Flags & ImGuiViewportFlags_IsMinimized) ? 0.30f : 1.00f;
-    window->DrawList->AddRectFilled(bb.Min, bb.Max, GetColorU32(ImGuiCol_Border, alpha_mul * 0.40f));
+    window->DrawList->AddRectFilled(bb.Min, bb.Max, GetStyleColorVec4(ImGuiCol_Border, alpha_mul * 0.40f));
     for (ImGuiWindow* thumb_window : g.Windows)
     {
         if (!thumb_window->WasActive || (thumb_window->Flags & ImGuiWindowFlags_ChildWindow))
@@ -21383,10 +21403,10 @@ void ImGui::DebugRenderViewportThumbnail(ImDrawList* draw_list, ImGuiViewportP* 
         thumb_r.ClipWithFull(bb);
         title_r.ClipWithFull(bb);
         const bool window_is_focused = (g.NavWindow && thumb_window->RootWindowForTitleBarHighlight == g.NavWindow->RootWindowForTitleBarHighlight);
-        window->DrawList->AddRectFilled(thumb_r.Min, thumb_r.Max, GetColorU32(ImGuiCol_WindowBg, alpha_mul));
-        window->DrawList->AddRectFilled(title_r.Min, title_r.Max, GetColorU32(window_is_focused ? ImGuiCol_TitleBgActive : ImGuiCol_TitleBg, alpha_mul));
+        window->DrawList->AddRectFilled(thumb_r.Min, thumb_r.Max, GetStyleColorVec4(ImGuiCol_WindowBg, alpha_mul));
+        window->DrawList->AddRectFilled(title_r.Min, title_r.Max, GetStyleColorVec4(window_is_focused ? ImGuiCol_TitleBgActive : ImGuiCol_TitleBg, alpha_mul));
         window->DrawList->AddRect(thumb_r.Min, thumb_r.Max, GetColorU32(ImGuiCol_Border, alpha_mul));
-        window->DrawList->AddText(g.Font, g.FontSize * 1.0f, title_r.Min, GetColorU32(ImGuiCol_Text, alpha_mul), thumb_window->Name, FindRenderedTextEnd(thumb_window->Name));
+        window->DrawList->AddText(g.Font, g.FontSize * 1.0f, title_r.Min, GetStyleColorVec4(ImGuiCol_Text, alpha_mul), thumb_window->Name, FindRenderedTextEnd(thumb_window->Name));
     }
     draw_list->AddRect(bb.Min, bb.Max, GetColorU32(ImGuiCol_Border, alpha_mul));
     if (viewport->ID == g.DebugMetricsConfig.HighlightViewportID)
@@ -21409,7 +21429,7 @@ static void RenderViewportsThumbnails()
     {
         ImRect monitor_draw_bb(off + (monitor.MainPos) * SCALE, off + (monitor.MainPos + monitor.MainSize) * SCALE);
         window->DrawList->AddRect(monitor_draw_bb.Min, monitor_draw_bb.Max, (g.DebugMetricsConfig.HighlightMonitorIdx == g.PlatformIO.Monitors.index_from_ptr(&monitor)) ? IM_COL32(255, 255, 0, 255) : ImGui::GetColorU32(ImGuiCol_Border), 4.0f);
-        window->DrawList->AddRectFilled(monitor_draw_bb.Min, monitor_draw_bb.Max, ImGui::GetColorU32(ImGuiCol_Border, 0.10f), 4.0f);
+        window->DrawList->AddRectFilled(monitor_draw_bb.Min, monitor_draw_bb.Max, ImGui::GetStyleColorVec4(ImGuiCol_Border, 0.10f), 4.0f);
     }
 
     // Draw viewports
@@ -22491,7 +22511,7 @@ bool ImGui::DebugBreakButton(const char* label, const char* description_of_locat
     ColorConvertHSVtoRGB(hsv.x + 0.20f, hsv.y, hsv.z, col4f.x, col4f.y, col4f.z);
 
     RenderNavCursor(bb, id);
-    RenderFrame(bb.Min, bb.Max, GetColorU32(col4f), true, g.Style.FrameRounding);
+    RenderFrame(bb.Min, bb.Max, ApplyStyleAlpha(col4f), true, g.Style.FrameRounding);
     RenderTextClipped(bb.Min, bb.Max, label, NULL, &label_size, g.Style.ButtonTextAlign, &bb);
 
     IMGUI_TEST_ENGINE_ITEM_INFO(id, label, g.LastItemData.StatusFlags);

@@ -3,8 +3,7 @@
 #include <Framework/Application/SlateApplication.h>
 
 #if WITH_ENGINE
-#include <Engine/TextureRenderTarget2D.h>
-#include <Slate/WidgetRenderer.h>
+#include <Engine/Texture.h>
 #endif
 
 #include "ImGuiBloom.h"
@@ -12,14 +11,54 @@
 
 FImGuiDrawList::FImGuiDrawList(ImDrawList* Source)
 {
+	if (!Source)
+	{
+		return;
+	}
+
 	VtxBuffer.swap(Source->VtxBuffer);
 	IdxBuffer.swap(Source->IdxBuffer);
+#if WITH_ENGINE
+	CmdBuffer.Reserve(Source->CmdBuffer.Size);
+	for (const ImDrawCmd& SourceCmd : Source->CmdBuffer)
+	{
+		if (SourceCmd.UserCallback && SourceCmd.UserCallback != ImDrawCallback_ResetRenderState)
+		{
+			continue;
+		}
+
+		FImGuiDrawCmd& Cmd = CmdBuffer.Emplace_GetRef();
+		Cmd.ClipRect = FVector4f(SourceCmd.ClipRect.x, SourceCmd.ClipRect.y, SourceCmd.ClipRect.z, SourceCmd.ClipRect.w);
+		Cmd.ElemCount = SourceCmd.ElemCount;
+		Cmd.IdxOffset = SourceCmd.IdxOffset;
+		Cmd.VtxOffset = SourceCmd.VtxOffset;
+		Cmd.bResetRenderState = SourceCmd.UserCallback == ImDrawCallback_ResetRenderState;
+
+		if (!Cmd.bResetRenderState)
+		{
+			if (UTexture* Texture = SourceCmd.GetTexID())
+			{
+				if (const FTextureResource* TextureResource = Texture->GetResource())
+				{
+					Cmd.Texture = TextureResource->TextureRHI;
+				}
+			}
+		}
+	}
+	Source->CmdBuffer.resize(0);
+#else
 	CmdBuffer.swap(Source->CmdBuffer);
+#endif
 	Flags = Source->Flags;
 }
 
 FImGuiDrawData::FImGuiDrawData(const ImDrawData* Source)
 {
+	if (!Source)
+	{
+		return;
+	}
+
 	bValid = Source->Valid;
 
 	TotalIdxCount = Source->TotalIdxCount;
@@ -31,206 +70,6 @@ FImGuiDrawData::FImGuiDrawData(const ImDrawData* Source)
 	DisplaySize = Source->DisplaySize;
 	FrameBufferScale = Source->FramebufferScale;
 }
-
-namespace
-{
-	void UpdateTextureBrush(const ImDrawCmd& DrawCmd, FSlateBrush& TextureBrush)
-	{
-#if WITH_ENGINE
-		UTexture* Texture = DrawCmd.GetTexID();
-		if (TextureBrush.GetResourceObject() != Texture)
-		{
-			TextureBrush.SetResourceObject(Texture);
-			if (IsValid(Texture))
-			{
-				TextureBrush.ImageSize.X = Texture->GetSurfaceWidth();
-				TextureBrush.ImageSize.Y = Texture->GetSurfaceHeight();
-				TextureBrush.ImageType = ESlateBrushImageType::FullColor;
-				TextureBrush.DrawAs = ESlateBrushDrawType::Image;
-			}
-			else
-			{
-				TextureBrush.ImageSize = FVector2D::ZeroVector;
-				TextureBrush.ImageType = ESlateBrushImageType::NoImage;
-				TextureBrush.DrawAs = ESlateBrushDrawType::NoDrawType;
-			}
-		}
-#else
-		FSlateBrush* Texture = DrawCmd.GetTexID();
-		if (Texture)
-		{
-			TextureBrush = *Texture;
-		}
-		else
-		{
-			TextureBrush.ImageSize = FVector2D::ZeroVector;
-			TextureBrush.ImageType = ESlateBrushImageType::NoImage;
-			TextureBrush.DrawAs = ESlateBrushDrawType::NoDrawType;
-		}
-#endif
-	}
-
-	void DrawCustomVerts(
-		FSlateWindowElementList& OutDrawElements,
-		const int32 LayerId,
-		FSlateBrush& TextureBrush,
-		const TArray<FSlateVertex>& Vertices,
-		const TArray<SlateIndex>& Indices,
-		const ImDrawCmd& DrawCmd,
-		const FSlateRect& ClipRect)
-	{
-		const int32 VertexOffset = static_cast<int32>(DrawCmd.VtxOffset);
-		const int32 IndexOffset = static_cast<int32>(DrawCmd.IdxOffset);
-		const int32 ElementCount = static_cast<int32>(DrawCmd.ElemCount);
-
-		if (ElementCount <= 0
-			|| VertexOffset < 0
-			|| VertexOffset >= Vertices.Num()
-			|| IndexOffset < 0
-			|| IndexOffset + ElementCount > Indices.Num())
-		{
-			return;
-		}
-
-		TArray<SlateIndex> RebasedIndices;
-		RebasedIndices.Reserve(ElementCount);
-
-		int32 MaxLocalVertexIndex = INDEX_NONE;
-
-		for (int32 ElementIndex = 0; ElementIndex < ElementCount; ++ElementIndex)
-		{
-			const int32 LocalVertexIndex = static_cast<int32>(Indices[IndexOffset + ElementIndex]);
-			if (LocalVertexIndex < 0)
-			{
-				return;
-			}
-
-			RebasedIndices.Add(static_cast<SlateIndex>(LocalVertexIndex));
-			MaxLocalVertexIndex = FMath::Max(MaxLocalVertexIndex, LocalVertexIndex);
-		}
-
-		const int32 VertexCount = MaxLocalVertexIndex + 1;
-		if (VertexCount <= 0 || VertexOffset + VertexCount > Vertices.Num())
-		{
-			return;
-		}
-
-		TArray<FSlateVertex> DrawVertices;
-		DrawVertices.Append(Vertices.GetData() + VertexOffset, VertexCount);
-
-		OutDrawElements.PushClip(FSlateClippingZone(ClipRect));
-
-		FSlateDrawElement::MakeCustomVerts(
-			OutDrawElements,
-			LayerId,
-			TextureBrush.GetRenderingResource(),
-			MoveTemp(DrawVertices),
-			MoveTemp(RebasedIndices),
-			nullptr,
-			0,
-			0
-		);
-
-		OutDrawElements.PopClip();
-	}
-
-	int32 DrawImGuiDrawData(
-		const FImGuiDrawData& DrawData,
-		const FGeometry& AllottedGeometry,
-		FSlateWindowElementList& OutDrawElements,
-		const int32 LayerId)
-	{
-		if (!DrawData.bValid)
-		{
-			return LayerId;
-		}
-
-		const FSlateRenderTransform Transform(AllottedGeometry.GetAccumulatedRenderTransform().GetTranslation() - FVector2d(DrawData.DisplayPos));
-
-		TArray<FSlateVertex> Vertices;
-		TArray<SlateIndex> Indices;
-		FSlateBrush TextureBrush;
-
-		for (const FImGuiDrawList& DrawList : DrawData.DrawLists)
-		{
-			Vertices.SetNumUninitialized(DrawList.VtxBuffer.Size);
-
-			ImDrawVert* SrcVertex = DrawList.VtxBuffer.Data;
-			FSlateVertex* DstVertex = Vertices.GetData();
-
-			for (int32 BufferIdx = 0; BufferIdx < Vertices.Num(); ++BufferIdx, ++SrcVertex, ++DstVertex)
-			{
-				DstVertex->TexCoords[0] = SrcVertex->uv.x;
-				DstVertex->TexCoords[1] = SrcVertex->uv.y;
-				DstVertex->TexCoords[2] = 1;
-				DstVertex->TexCoords[3] = 1;
-				DstVertex->Position = TransformPoint(Transform, FVector2f(SrcVertex->pos));
-				DstVertex->Color.Bits = SrcVertex->col;
-			}
-
-			ImGui::CopyArray(DrawList.IdxBuffer, Indices);
-
-			for (const ImDrawCmd& DrawCmd : DrawList.CmdBuffer)
-			{
-				UpdateTextureBrush(DrawCmd, TextureBrush);
-
-				FSlateRect ClipRect(DrawCmd.ClipRect.x, DrawCmd.ClipRect.y, DrawCmd.ClipRect.z, DrawCmd.ClipRect.w);
-				ClipRect = TransformRect(Transform, ClipRect);
-
-				DrawCustomVerts(OutDrawElements, LayerId, TextureBrush, Vertices, Indices, DrawCmd, ClipRect);
-			}
-		}
-
-		return LayerId;
-	}
-}
-
-#if WITH_ENGINE
-class SImGuiSourceWidget : public SLeafWidget
-{
-public:
-	SLATE_BEGIN_ARGS(SImGuiSourceWidget)
-	{
-	}
-	SLATE_END_ARGS()
-
-	void Construct(const FArguments& Args)
-	{
-		SetVisibility(EVisibility::SelfHitTestInvisible);
-	}
-
-	void SetDrawData(const FImGuiDrawData& InDrawData)
-	{
-		DrawData = InDrawData;
-	}
-
-	virtual int32 OnPaint(
-		const FPaintArgs& Args,
-		const FGeometry& AllottedGeometry,
-		const FSlateRect& MyCullingRect,
-		FSlateWindowElementList& OutDrawElements,
-		int32 LayerId,
-		const FWidgetStyle& InWidgetStyle,
-		bool bParentEnabled) const override
-	{
-		return DrawImGuiDrawData(
-			DrawData,
-			AllottedGeometry,
-			OutDrawElements,
-			LayerId);
-	}
-
-	virtual FVector2D ComputeDesiredSize(float LayoutScaleMultiplier) const override
-	{
-		return FVector2D(
-			FMath::Max(FMath::CeilToInt(DrawData.DisplaySize.X), 1),
-			FMath::Max(FMath::CeilToInt(DrawData.DisplaySize.Y), 1));
-	}
-
-private:
-	FImGuiDrawData DrawData;
-};
-#endif
 
 class FImGuiInputProcessor : public IInputProcessor
 {
@@ -535,14 +374,6 @@ void SImGuiOverlay::Construct(const FArguments& Args)
 		InputProcessor = MakeShared<FImGuiInputProcessor>(this);
 		FSlateApplication::Get().RegisterInputPreProcessor(InputProcessor.ToSharedRef(), 0);
 	}
-
-#if WITH_ENGINE && !UE_SERVER
-	SourceWidget = SNew(SImGuiSourceWidget);
-	SourceWidgetRenderer = MakeUnique<FWidgetRenderer>(false, true);
-	SourceWidgetRenderer->SetApplyColorDeficiencyCorrection(false);
-	SourceWidgetRenderer->SetIsPrepassNeeded(false);
-	SourceWidgetRenderer->SetClearHitTestGrid(false);
-#endif
 }
 
 SImGuiOverlay::~SImGuiOverlay()
@@ -555,24 +386,27 @@ SImGuiOverlay::~SImGuiOverlay()
 
 int32 SImGuiOverlay::OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const
 {
-	if (!DrawData.bValid)
+	if (!DrawData.IsValid() || !DrawData->bValid)
 	{
 		PresentDrawer.Reset();
 		return LayerId;
 	}
 
 #if WITH_ENGINE && !UE_SERVER
-	if (SourceRenderTarget.IsValid() && SourceRenderTargetSize.X > 0 && SourceRenderTargetSize.Y > 0)
+	const FIntPoint SourceExtent(
+		FMath::Max(FMath::CeilToInt(DrawData->DisplaySize.X), 1),
+		FMath::Max(FMath::CeilToInt(DrawData->DisplaySize.Y), 1));
+	if (SourceExtent.X > 0 && SourceExtent.Y > 0)
 	{
 		const FVector2d AbsolutePosition = AllottedGeometry.GetAccumulatedRenderTransform().GetTranslation();
 		const FIntPoint OutputMin(FMath::FloorToInt(AbsolutePosition.X), FMath::FloorToInt(AbsolutePosition.Y));
-		const FIntRect OutputRect(OutputMin, OutputMin + SourceRenderTargetSize);
+		const FIntRect OutputRect(OutputMin, OutputMin + SourceExtent);
 		const FImGuiBloomSettings BloomSettings = Context.IsValid()
 			? FImGuiBloomSettings{ Context->GetBloomIntensity(), Context->GetBloomThreshold() }
 			: FImGuiBloomSettings{};
 
 		PresentDrawer =
-			MakeShared<FImGuiPresentDrawer, ESPMode::ThreadSafe>(SourceRenderTarget->TextureReference.TextureReferenceRHI, OutputRect, BloomSettings);
+			MakeShared<FImGuiPresentDrawer, ESPMode::ThreadSafe>(DrawData, OutputRect, BloomSettings);
 		FSlateDrawElement::MakeCustom(OutDrawElements, LayerId, PresentDrawer);
 	}
 	else
@@ -612,50 +446,5 @@ TSharedPtr<FImGuiContext> SImGuiOverlay::GetContext() const
 
 void SImGuiOverlay::SetDrawData(const ImDrawData* InDrawData)
 {
-	DrawData = FImGuiDrawData(InDrawData);
-	UpdateSourceCapture();
-}
-
-void SImGuiOverlay::UpdateSourceCapture()
-{
-#if WITH_ENGINE && !UE_SERVER
-	if (!Context.IsValid() || !SourceWidget.IsValid() || !SourceWidgetRenderer.IsValid())
-	{
-		return;
-	}
-
-	if (!DrawData.bValid)
-	{
-		SourceRenderTargetSize = FIntPoint::ZeroValue;
-		return;
-	}
-
-	const FIntPoint TargetSize(
-		FMath::Max(FMath::CeilToInt(DrawData.DisplaySize.X), 1),
-		FMath::Max(FMath::CeilToInt(DrawData.DisplaySize.Y), 1));
-
-	if (!SourceRenderTarget.IsValid() || SourceRenderTargetSize != TargetSize)
-	{
-		SourceRenderTarget.Reset(FWidgetRenderer::CreateTargetFor(FVector2D(TargetSize), TF_Bilinear, false));
-
-		UTextureRenderTarget2D* RenderTarget = SourceRenderTarget.Get();
-		if (IsValid(RenderTarget))
-		{
-			RenderTarget->ClearColor = FLinearColor::Transparent;
-			RenderTarget->TargetGamma = 1.0f;
-			RenderTarget->Filter = TF_Bilinear;
-			RenderTarget->AddressX = TA_Clamp;
-			RenderTarget->AddressY = TA_Clamp;
-			RenderTarget->bAutoGenerateMips = false;
-			RenderTarget->UpdateResourceImmediate(true);
-		}
-	}
-
-	SourceRenderTargetSize = TargetSize;
-	if (IsValid(SourceRenderTarget.Get()))
-	{
-		SourceWidget->SetDrawData(DrawData);
-		SourceWidgetRenderer->DrawWidget(SourceRenderTarget.Get(), SourceWidget.ToSharedRef(), FVector2D(TargetSize), 0.0f, true);
-	}
-#endif
+	DrawData = MakeShared<FImGuiDrawData, ESPMode::ThreadSafe>(InDrawData);
 }
