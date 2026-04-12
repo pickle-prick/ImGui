@@ -762,6 +762,8 @@ void ImDrawList::PrimReserve(int idx_count, int vtx_count)
 
     int vtx_buffer_old_size = VtxBuffer.Size;
     VtxBuffer.resize(vtx_buffer_old_size + vtx_count);
+    for (int i = vtx_buffer_old_size; i < VtxBuffer.Size; ++i)
+        VtxBuffer.Data[i].hdr = _HdrScale;
     _VtxWritePtr = VtxBuffer.Data + vtx_buffer_old_size;
 
     int idx_buffer_old_size = IdxBuffer.Size;
