@@ -9,15 +9,15 @@
 #include "ImGuiBloom.h"
 #include "ImGuiContext.h"
 
-FImGuiDrawList::FImGuiDrawList(ImDrawList* Source)
+FImGuiDrawList::FImGuiDrawList(const ImDrawList* Source)
 {
 	if (!Source)
 	{
 		return;
 	}
 
-	VtxBuffer.swap(Source->VtxBuffer);
-	IdxBuffer.swap(Source->IdxBuffer);
+	VtxBuffer = Source->VtxBuffer;
+	IdxBuffer = Source->IdxBuffer;
 #if WITH_ENGINE
 	CmdBuffer.Reserve(Source->CmdBuffer.Size);
 	for (const ImDrawCmd& SourceCmd : Source->CmdBuffer)
@@ -45,9 +45,8 @@ FImGuiDrawList::FImGuiDrawList(ImDrawList* Source)
 			}
 		}
 	}
-	Source->CmdBuffer.resize(0);
 #else
-	CmdBuffer.swap(Source->CmdBuffer);
+	CmdBuffer = Source->CmdBuffer;
 #endif
 	Flags = Source->Flags;
 }
@@ -64,7 +63,11 @@ FImGuiDrawData::FImGuiDrawData(const ImDrawData* Source)
 	TotalIdxCount = Source->TotalIdxCount;
 	TotalVtxCount = Source->TotalVtxCount;
 
-	ImGui::CopyArray(Source->CmdLists, DrawLists);
+	DrawLists.Reserve(Source->CmdListsCount);
+	for (int32 DrawListIndex = 0; DrawListIndex < Source->CmdListsCount; ++DrawListIndex)
+	{
+		DrawLists.Emplace(Source->CmdLists[DrawListIndex]);
+	}
 
 	DisplayPos = Source->DisplayPos;
 	DisplaySize = Source->DisplaySize;

@@ -33,7 +33,7 @@ struct FImGuiDrawCmd
 struct FImGuiDrawList
 {
 	FImGuiDrawList() = default;
-	explicit FImGuiDrawList(ImDrawList* Source);
+	explicit FImGuiDrawList(const ImDrawList* Source);
 
 	ImVector<ImDrawVert> VtxBuffer;
 	ImVector<ImDrawIdx> IdxBuffer;
