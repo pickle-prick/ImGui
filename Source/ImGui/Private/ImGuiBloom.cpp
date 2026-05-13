@@ -609,10 +609,11 @@ namespace
 #endif
 }
 
-FImGuiPresentDrawer::FImGuiPresentDrawer(TSharedPtr<const FImGuiDrawData, ESPMode::ThreadSafe> InDrawData, const FIntRect& InOutputRect, const FImGuiBloomSettings& InSettings)
+FImGuiPresentDrawer::FImGuiPresentDrawer(TSharedPtr<const FImGuiDrawData, ESPMode::ThreadSafe> InDrawData, const FIntRect& InOutputRect, const FImGuiBloomSettings& InSettings, bool bInClipToSceneViewRect)
 	: DrawData(MoveTemp(InDrawData))
 	, OutputRect(InOutputRect)
 	, Settings(InSettings)
+	, bClipToSceneViewRect(bInClipToSceneViewRect)
 {
 }
 
@@ -625,7 +626,10 @@ void FImGuiPresentDrawer::Draw_RenderThread(FRDGBuilder& GraphBuilder, const FDr
 
 	FIntRect ClampedOutputRect = OutputRect;
 	ClampedOutputRect.Clip(FIntRect(FIntPoint::ZeroValue, Inputs.OutputTexture->Desc.Extent));
-	ClampedOutputRect.Clip(Inputs.SceneViewRect);
+	if (bClipToSceneViewRect)
+	{
+		ClampedOutputRect.Clip(Inputs.SceneViewRect);
+	}
 	if (ClampedOutputRect.Area() <= 0)
 	{
 		return;

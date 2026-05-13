@@ -174,7 +174,11 @@ TSharedPtr<FImGuiContext> FImGuiModule::CreateWindowContext(const TSharedRef<SWi
 	FImGuiViewportData* ViewportData = FImGuiViewportData::GetOrCreate(ImGui::GetMainViewport());
 	if (ViewportData)
 	{
-		const TSharedRef<SImGuiOverlay> Overlay = SNew(SImGuiOverlay).Context(Context);
+		const TSharedRef<SImGuiOverlay> Overlay =
+			SNew(SImGuiOverlay)
+			.Context(Context)
+			.UseLocalOutputRect(true)
+			.ClipToSceneViewRect(false);
 
 		ViewportData->Window = Window;
 		ViewportData->Overlay = Overlay;

@@ -18,7 +18,7 @@ struct FImGuiDrawData;
 class FImGuiPresentDrawer : public ICustomSlateElement
 {
 public:
-	FImGuiPresentDrawer(TSharedPtr<const FImGuiDrawData, ESPMode::ThreadSafe> InDrawData, const FIntRect& InOutputRect, const FImGuiBloomSettings& InSettings);
+	FImGuiPresentDrawer(TSharedPtr<const FImGuiDrawData, ESPMode::ThreadSafe> InDrawData, const FIntRect& InOutputRect, const FImGuiBloomSettings& InSettings, bool bInClipToSceneViewRect);
 
 	virtual void Draw_RenderThread(FRDGBuilder& GraphBuilder, const FDrawPassInputs& Inputs) override;
 
@@ -26,6 +26,7 @@ private:
 	TSharedPtr<const FImGuiDrawData, ESPMode::ThreadSafe> DrawData;
 	FIntRect OutputRect;
 	FImGuiBloomSettings Settings;
+	bool bClipToSceneViewRect = true;
 };
 
 #endif

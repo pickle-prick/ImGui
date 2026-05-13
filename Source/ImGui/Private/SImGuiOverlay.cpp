@@ -372,6 +372,8 @@ void SImGuiOverlay::Construct(const FArguments& Args)
 	ForceVolatile(true);
 
 	Context = Args._Context.IsValid() ? Args._Context : FImGuiContext::Create();
+	bUseLocalOutputRect = Args._UseLocalOutputRect;
+	bClipToSceneViewRect = Args._ClipToSceneViewRect;
 	if (Args._HandleInput)
 	{
 		InputProcessor = MakeShared<FImGuiInputProcessor>(this);
@@ -402,14 +404,16 @@ int32 SImGuiOverlay::OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGe
 	if (SourceExtent.X > 0 && SourceExtent.Y > 0)
 	{
 		const FVector2d AbsolutePosition = AllottedGeometry.GetAccumulatedRenderTransform().GetTranslation();
-		const FIntPoint OutputMin(FMath::FloorToInt(AbsolutePosition.X), FMath::FloorToInt(AbsolutePosition.Y));
+		const FIntPoint OutputMin = bUseLocalOutputRect
+			? FIntPoint::ZeroValue
+			: FIntPoint(FMath::FloorToInt(AbsolutePosition.X), FMath::FloorToInt(AbsolutePosition.Y));
 		const FIntRect OutputRect(OutputMin, OutputMin + SourceExtent);
 		const FImGuiBloomSettings BloomSettings = Context.IsValid()
 			? FImGuiBloomSettings{ Context->GetBloomIntensity(), Context->GetBloomThreshold() }
 			: FImGuiBloomSettings{};
 
 		PresentDrawer =
-			MakeShared<FImGuiPresentDrawer, ESPMode::ThreadSafe>(DrawData, OutputRect, BloomSettings);
+			MakeShared<FImGuiPresentDrawer, ESPMode::ThreadSafe>(DrawData, OutputRect, BloomSettings, bClipToSceneViewRect);
 		FSlateDrawElement::MakeCustom(OutDrawElements, LayerId, PresentDrawer);
 	}
 	else

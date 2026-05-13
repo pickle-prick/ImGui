@@ -80,6 +80,8 @@ static void ImGui_CreateWindow(ImGuiViewport* Viewport)
 				SAssignNew(ViewportData->Overlay, SImGuiOverlay)
 				.Context(FImGuiContext::Get(ImGui::GetCurrentContext()))
 				.HandleInput(false)
+				.UseLocalOutputRect(true)
+				.ClipToSceneViewRect(false)
 			];
 
 		if (ParentWindow.IsValid())

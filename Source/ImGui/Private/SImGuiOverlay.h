@@ -71,6 +71,8 @@ public:
 
 		SLATE_ARGUMENT(TSharedPtr<FImGuiContext>, Context);
 		SLATE_ARGUMENT_DEFAULT(bool, HandleInput) = true;
+		SLATE_ARGUMENT_DEFAULT(bool, UseLocalOutputRect) = false;
+		SLATE_ARGUMENT_DEFAULT(bool, ClipToSceneViewRect) = true;
 	SLATE_END_ARGS()
 
 	void Construct(const FArguments& Args);
@@ -88,6 +90,8 @@ private:
 	TSharedPtr<FImGuiContext> Context = nullptr;
 	TSharedPtr<IInputProcessor> InputProcessor = nullptr;
 	TSharedPtr<const FImGuiDrawData, ESPMode::ThreadSafe> DrawData;
+	bool bUseLocalOutputRect = false;
+	bool bClipToSceneViewRect = true;
 
 #if WITH_ENGINE
 	mutable TSharedPtr<FImGuiPresentDrawer, ESPMode::ThreadSafe> PresentDrawer;
